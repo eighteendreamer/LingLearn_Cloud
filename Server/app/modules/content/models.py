@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
@@ -139,3 +139,57 @@ class ContentFavorite(Base):
     content_item_id: Mapped[int] = mapped_column(ForeignKey("content_items.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())
 
+
+class ContentComment(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "content_comments"
+    __table_args__ = (
+        Index("idx_comments_content_parent_created", "content_item_id", "parent_id", "created_at"),
+        Index("idx_comments_root_created", "root_id", "created_at"),
+        Index("idx_comments_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    content_item_id: Mapped[int] = mapped_column(ForeignKey("content_items.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("content_comments.id"), nullable=True)
+    root_id: Mapped[int | None] = mapped_column(ForeignKey("content_comments.id"), nullable=True)
+    reply_to_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    content: Mapped[str] = mapped_column(String(1000), nullable=False)
+    like_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+
+
+class ContentShare(Base):
+    __tablename__ = "content_shares"
+    __table_args__ = (
+        Index("idx_shares_content_created", "content_item_id", "created_at"),
+        Index("idx_shares_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    content_item_id: Mapped[int] = mapped_column(ForeignKey("content_items.id"), nullable=False)
+    share_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="internal")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())
+
+
+class ContentViewHistory(Base, TimestampMixin):
+    __tablename__ = "content_view_histories"
+    __table_args__ = (
+        UniqueConstraint("user_id", "content_item_id", "view_date", name="uk_view_history_day"),
+        Index("idx_view_history_user_last", "user_id", "last_viewed_at"),
+        Index("idx_view_history_content_date", "content_item_id", "view_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    content_item_id: Mapped[int] = mapped_column(ForeignKey("content_items.id"), nullable=False)
+    view_date: Mapped[date] = mapped_column(nullable=False)
+    view_count: Mapped[int] = mapped_column(nullable=False, default=1)
+    watch_seconds: Mapped[int] = mapped_column(nullable=False, default=0)
+    watch_progress: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+    last_position_seconds: Mapped[int] = mapped_column(nullable=False, default=0)
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    liked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    favorited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_viewed_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())

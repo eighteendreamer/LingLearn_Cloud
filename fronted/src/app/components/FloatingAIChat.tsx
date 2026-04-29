@@ -110,14 +110,14 @@ export function FloatingAIChat() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-24 right-5 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-110 transition-all"
+          className="fixed bottom-24 right-3 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-gradient-to-br from-emerald-500 to-teal-500 shadow-2xl transition-all hover:scale-110 hover:shadow-2xl"
         >
           <MessageCircle className="w-6 h-6 text-white" />
         </button>
       )}
 
       {isOpen && (
-        <div className="fixed bottom-24 right-5 z-50 w-[360px] h-[520px] flex flex-col rounded-2xl shadow-2xl border border-gray-200 overflow-hidden bg-white">
+        <div className="fixed bottom-24 right-3 z-50 flex h-[min(520px,calc(100vh-8rem))] w-[min(360px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
           <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 flex-shrink-0">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">

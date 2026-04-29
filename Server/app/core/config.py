@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     database_url: str = Field(...)
     db_echo: bool = Field(...)
     db_pool_recycle: int = Field(...)
+    redis_enabled: bool = Field(default=False)
+    redis_url: str = Field(default="")
+    redis_prefix: str = Field(default="linglearn")
+    redis_default_ttl_seconds: int = Field(default=300)
 
     minio_endpoint: str = Field(...)
     minio_access_key: str = Field(...)

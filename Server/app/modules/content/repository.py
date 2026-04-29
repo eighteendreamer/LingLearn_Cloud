@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from decimal import Decimal
+from datetime import date, datetime
 
 from sqlalchemy import Select, and_, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,10 +11,13 @@ from sqlalchemy.orm import aliased
 from app.modules.auth.models import User
 from app.modules.content.models import (
     ContentCategory,
+    ContentComment,
     ContentFavorite,
     ContentItem,
     ContentItemTag,
     ContentLike,
+    ContentShare,
+    ContentViewHistory,
     Tag,
 )
 from app.modules.storage.models import MediaAsset
@@ -85,6 +89,14 @@ class ContentRepository:
     async def get_content_item_by_id(self, session: AsyncSession, content_id: int) -> ContentItem | None:
         return await session.get(ContentItem, content_id)
 
+    async def get_content_item_by_id_for_update(
+        self,
+        session: AsyncSession,
+        content_id: int,
+    ) -> ContentItem | None:
+        stmt = select(ContentItem).where(ContentItem.id == content_id).with_for_update()
+        return await session.scalar(stmt)
+
     async def update_content_item(self, session: AsyncSession, *, content_id: int, values: dict) -> None:
         if not values:
             return
@@ -124,6 +136,283 @@ class ContentRepository:
             )
 
         return (await session.execute(stmt)).mappings().first()
+
+    async def get_content_like(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+    ) -> ContentLike | None:
+        stmt = select(ContentLike).where(
+            ContentLike.user_id == user_id,
+            ContentLike.content_item_id == content_item_id,
+        )
+        return await session.scalar(stmt)
+
+    async def create_content_like(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+    ) -> ContentLike:
+        entity = ContentLike(user_id=user_id, content_item_id=content_item_id)
+        session.add(entity)
+        await session.flush()
+        return entity
+
+    async def delete_content_like(self, session: AsyncSession, entity: ContentLike) -> None:
+        await session.delete(entity)
+
+    async def get_content_favorite(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+    ) -> ContentFavorite | None:
+        stmt = select(ContentFavorite).where(
+            ContentFavorite.user_id == user_id,
+            ContentFavorite.content_item_id == content_item_id,
+        )
+        return await session.scalar(stmt)
+
+    async def create_content_favorite(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+    ) -> ContentFavorite:
+        entity = ContentFavorite(user_id=user_id, content_item_id=content_item_id)
+        session.add(entity)
+        await session.flush()
+        return entity
+
+    async def delete_content_favorite(self, session: AsyncSession, entity: ContentFavorite) -> None:
+        await session.delete(entity)
+
+    async def create_content_share(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+        share_channel: str,
+    ) -> ContentShare:
+        entity = ContentShare(
+            user_id=user_id,
+            content_item_id=content_item_id,
+            share_channel=share_channel,
+        )
+        session.add(entity)
+        await session.flush()
+        return entity
+
+    async def get_content_comment_by_id(
+        self,
+        session: AsyncSession,
+        comment_id: int,
+    ) -> ContentComment | None:
+        return await session.get(ContentComment, comment_id)
+
+    async def create_content_comment(
+        self,
+        session: AsyncSession,
+        *,
+        content_item_id: int,
+        user_id: int,
+        content: str,
+        parent_id: int | None,
+        root_id: int | None,
+        reply_to_user_id: int | None,
+    ) -> ContentComment:
+        entity = ContentComment(
+            content_item_id=content_item_id,
+            user_id=user_id,
+            content=content,
+            parent_id=parent_id,
+            root_id=root_id,
+            reply_to_user_id=reply_to_user_id,
+        )
+        session.add(entity)
+        await session.flush()
+        return entity
+
+    async def get_view_history_for_day(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+        view_date: date,
+    ) -> ContentViewHistory | None:
+        stmt = select(ContentViewHistory).where(
+            ContentViewHistory.user_id == user_id,
+            ContentViewHistory.content_item_id == content_item_id,
+            ContentViewHistory.view_date == view_date,
+        )
+        return await session.scalar(stmt)
+
+    async def create_view_history(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        content_item_id: int,
+        view_date: date,
+        watch_seconds: int,
+        watch_progress: float,
+        last_position_seconds: int,
+        completed: bool,
+        liked: bool,
+        favorited: bool,
+        last_viewed_at: datetime,
+    ) -> ContentViewHistory:
+        entity = ContentViewHistory(
+            user_id=user_id,
+            content_item_id=content_item_id,
+            view_date=view_date,
+            view_count=1,
+            watch_seconds=watch_seconds,
+            watch_progress=watch_progress,
+            last_position_seconds=last_position_seconds,
+            completed=completed,
+            liked=liked,
+            favorited=favorited,
+            last_viewed_at=last_viewed_at,
+        )
+        session.add(entity)
+        await session.flush()
+        return entity
+
+    async def update_view_history(
+        self,
+        session: AsyncSession,
+        *,
+        history_id: int,
+        values: dict,
+    ) -> None:
+        if not values:
+            return
+        stmt = update(ContentViewHistory).where(ContentViewHistory.id == history_id).values(**values)
+        await session.execute(stmt)
+
+    async def increment_content_counters(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        likes_delta: int = 0,
+        comments_delta: int = 0,
+        favorites_delta: int = 0,
+        shares_delta: int = 0,
+        hot_score_delta: float | Decimal = Decimal("0"),
+    ) -> None:
+        values: dict = {}
+        if likes_delta:
+            values["likes_count"] = func.greatest(ContentItem.likes_count + likes_delta, 0)
+        if comments_delta:
+            values["comments_count"] = func.greatest(ContentItem.comments_count + comments_delta, 0)
+        if favorites_delta:
+            values["favorites_count"] = func.greatest(ContentItem.favorites_count + favorites_delta, 0)
+        if shares_delta:
+            values["shares_count"] = func.greatest(ContentItem.shares_count + shares_delta, 0)
+        if hot_score_delta:
+            values["hot_score"] = ContentItem.hot_score + Decimal(str(hot_score_delta))
+        if not values:
+            return
+        stmt = (
+            update(ContentItem)
+            .where(ContentItem.id == content_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+
+    async def increment_views_count(self, session: AsyncSession, *, content_id: int, delta: int = 1) -> None:
+        if not delta:
+            return
+        stmt = (
+            update(ContentItem)
+            .where(ContentItem.id == content_id)
+            .values(views_count=func.greatest(ContentItem.views_count + delta, 0))
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+
+    async def increment_author_likes_received(
+        self,
+        session: AsyncSession,
+        *,
+        author_user_id: int,
+        delta: int,
+    ) -> None:
+        if not delta:
+            return
+        stmt = (
+            update(UserProfile)
+            .where(UserProfile.user_id == author_user_id)
+            .values(likes_received_count=func.greatest(UserProfile.likes_received_count + delta, 0))
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+
+    async def list_content_comments_rows(
+        self,
+        session: AsyncSession,
+        *,
+        content_item_id: int,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict], int]:
+        author_profile = aliased(UserProfile)
+        author_avatar = aliased(MediaAsset)
+        reply_profile = aliased(UserProfile)
+
+        total_stmt = (
+            select(func.count())
+            .select_from(ContentComment)
+            .where(
+                ContentComment.content_item_id == content_item_id,
+                ContentComment.deleted_at.is_(None),
+                ContentComment.status == "normal",
+            )
+        )
+        total = int((await session.scalar(total_stmt)) or 0)
+
+        stmt = (
+            select(
+                ContentComment.id.label("id"),
+                ContentComment.content_item_id.label("content_item_id"),
+                ContentComment.user_id.label("user_id"),
+                ContentComment.content.label("content"),
+                ContentComment.like_count.label("like_count"),
+                ContentComment.parent_id.label("parent_id"),
+                ContentComment.root_id.label("root_id"),
+                ContentComment.reply_to_user_id.label("reply_to_user_id"),
+                ContentComment.created_at.label("created_at"),
+                author_profile.display_name.label("display_name"),
+                author_avatar.object_key.label("avatar_object_key"),
+                author_avatar.public_url.label("avatar_public_url"),
+                reply_profile.display_name.label("reply_to_display_name"),
+            )
+            .select_from(ContentComment)
+            .join(author_profile, author_profile.user_id == ContentComment.user_id)
+            .outerjoin(author_avatar, author_avatar.id == author_profile.avatar_asset_id)
+            .outerjoin(reply_profile, reply_profile.user_id == ContentComment.reply_to_user_id)
+            .where(
+                ContentComment.content_item_id == content_item_id,
+                ContentComment.deleted_at.is_(None),
+                ContentComment.status == "normal",
+            )
+            .order_by(ContentComment.created_at.desc(), ContentComment.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = list((await session.execute(stmt)).mappings().all())
+        return rows, total
 
     async def list_feed_rows(
         self,
@@ -223,9 +512,11 @@ class ContentRepository:
         cover_asset = aliased(MediaAsset)
         primary_asset = aliased(MediaAsset)
         avatar_asset = aliased(MediaAsset)
+        viewer_follow_relation = aliased(UserFollowRelation)
 
         liked_expr = literal(False)
         favorited_expr = literal(False)
+        author_following_expr = literal(False)
         if viewer_user_id is not None:
             liked_expr = exists(
                 select(1).where(
@@ -239,8 +530,9 @@ class ContentRepository:
                     ContentFavorite.content_item_id == ContentItem.id,
                 )
             )
+            author_following_expr = viewer_follow_relation.id.is_not(None)
 
-        return (
+        stmt = (
             select(
                 ContentItem.id.label("id"),
                 ContentItem.author_id.label("author_id"),
@@ -269,6 +561,7 @@ class ContentRepository:
                 avatar_asset.public_url.label("avatar_public_url"),
                 liked_expr.label("liked"),
                 favorited_expr.label("favorited"),
+                author_following_expr.label("author_is_following"),
             )
             .select_from(ContentItem)
             .join(User, User.id == ContentItem.author_id)
@@ -278,6 +571,17 @@ class ContentRepository:
             .outerjoin(primary_asset, primary_asset.id == ContentItem.primary_media_asset_id)
             .outerjoin(avatar_asset, avatar_asset.id == UserProfile.avatar_asset_id)
         )
+
+        if viewer_user_id is not None:
+            stmt = stmt.outerjoin(
+                viewer_follow_relation,
+                and_(
+                    viewer_follow_relation.follower_user_id == viewer_user_id,
+                    viewer_follow_relation.followee_user_id == ContentItem.author_id,
+                ),
+            )
+
+        return stmt
 
     @staticmethod
     def _public_content_conditions():

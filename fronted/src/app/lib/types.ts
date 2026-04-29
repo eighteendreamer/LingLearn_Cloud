@@ -101,6 +101,7 @@ export interface ContentAuthorResponse {
   user_id: number;
   display_name: string;
   avatar_url: string | null;
+  is_following: boolean;
 }
 
 export interface ContentCategoryResponse {
@@ -116,6 +117,34 @@ export interface ContentInteractionResponse {
   shares_count: number;
   liked: boolean;
   favorited: boolean;
+}
+
+export interface ContentInteractionMutationResponse {
+  content_id: number;
+  interaction: ContentInteractionResponse;
+}
+
+export interface ContentCommentResponse {
+  id: number;
+  content_item_id: number;
+  user_id: number;
+  display_name: string;
+  avatar_url: string | null;
+  content: string;
+  like_count: number;
+  parent_id: number | null;
+  root_id: number | null;
+  reply_to_user_id: number | null;
+  reply_to_display_name: string | null;
+  created_at: string;
+}
+
+export interface ContentCommentListResponse {
+  list: ContentCommentResponse[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
 }
 
 export interface ContentVideoResponse {
@@ -152,4 +181,20 @@ export interface ContentCreatePayload {
   duration_seconds?: number | null;
   allow_comment?: boolean;
   allow_duet?: boolean;
+}
+
+export interface ContentSharePayload {
+  share_channel?: string;
+}
+
+export interface ContentCommentCreatePayload {
+  content: string;
+  parent_id?: number | null;
+}
+
+export interface ContentWatchProgressPayload {
+  watch_seconds: number;
+  watch_progress: number;
+  last_position_seconds: number;
+  completed: boolean;
 }

@@ -16,6 +16,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import LoggingMiddleware, configure_logging
+from app.infra.cache.redis_client import redis_cache_client
 
 settings = get_settings()
 
@@ -24,6 +25,7 @@ settings = get_settings()
 async def lifespan(_: FastAPI):
     configure_logging(settings.log_level)
     yield
+    await redis_cache_client.close()
 
 
 def create_app() -> FastAPI:
@@ -52,9 +54,7 @@ def create_app() -> FastAPI:
 
     return app
 
-
 app = create_app()
-
 
 if __name__ == "__main__":
     import uvicorn

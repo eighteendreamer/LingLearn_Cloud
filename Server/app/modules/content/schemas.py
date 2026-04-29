@@ -9,6 +9,7 @@ class ContentAuthorResponse(BaseModel):
     user_id: int
     display_name: str
     avatar_url: str | None = None
+    is_following: bool = False
 
 
 class ContentCategoryResponse(BaseModel):
@@ -24,6 +25,34 @@ class ContentInteractionResponse(BaseModel):
     shares_count: int
     liked: bool = False
     favorited: bool = False
+
+
+class ContentInteractionMutationResponse(BaseModel):
+    content_id: int
+    interaction: ContentInteractionResponse
+
+
+class ContentCommentResponse(BaseModel):
+    id: int
+    content_item_id: int
+    user_id: int
+    display_name: str
+    avatar_url: str | None = None
+    content: str
+    like_count: int
+    parent_id: int | None = None
+    root_id: int | None = None
+    reply_to_user_id: int | None = None
+    reply_to_display_name: str | None = None
+    created_at: datetime
+
+
+class ContentCommentListResponse(BaseModel):
+    list: list[ContentCommentResponse]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
 
 
 class ContentVideoResponse(BaseModel):
@@ -79,3 +108,19 @@ class FeedQueryParams(BaseModel):
     limit: int = Field(default=10, ge=1, le=20)
     category_id: int | None = Field(default=None, gt=0)
     recommend_type: str = Field(default="for_you", min_length=1, max_length=32)
+
+
+class ContentShareRequest(BaseModel):
+    share_channel: str = Field(default="internal", min_length=1, max_length=32)
+
+
+class ContentCommentCreateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=1000)
+    parent_id: int | None = Field(default=None, gt=0)
+
+
+class ContentWatchProgressRequest(BaseModel):
+    watch_seconds: int = Field(default=0, ge=0)
+    watch_progress: float = Field(default=0, ge=0, le=100)
+    last_position_seconds: int = Field(default=0, ge=0)
+    completed: bool = False

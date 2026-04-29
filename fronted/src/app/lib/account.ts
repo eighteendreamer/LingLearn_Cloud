@@ -90,3 +90,15 @@ export async function logoutCurrentUser() {
     clearSession();
   }
 }
+
+export async function followUser(userId: number) {
+  return apiRequest<{ target_user_id: number; is_following: boolean }>(`/users/${userId}/follow`, {
+    method: "POST",
+  });
+}
+
+export async function unfollowUser(userId: number) {
+  return apiRequest<{ target_user_id: number; is_following: boolean }>(`/users/${userId}/follow`, {
+    method: "DELETE",
+  });
+}

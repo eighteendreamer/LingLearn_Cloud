@@ -8,15 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.pagination import PaginationParams, build_page_response
 from app.common.utils import utc_now_naive
 from app.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
+from app.infra.cache.redis_client import RedisCacheClient, redis_cache_client
 from app.infra.storage.service import StorageService
 from app.modules.content.repository import ContentRepository
 from app.modules.content.schemas import (
     ContentAuthorResponse,
     ContentCategoryResponse,
+    ContentCommentCreateRequest,
+    ContentCommentListResponse,
+    ContentCommentResponse,
     ContentCreateRequest,
     ContentInteractionResponse,
+    ContentInteractionMutationResponse,
+    ContentShareRequest,
     ContentUpdateRequest,
     ContentVideoResponse,
+    ContentWatchProgressRequest,
     FeedQueryParams,
     FeedVideosResponse,
 )
@@ -29,9 +36,11 @@ class ContentService:
         *,
         repository: ContentRepository | None = None,
         storage_service: StorageService | None = None,
+        cache_client: RedisCacheClient | None = None,
     ) -> None:
         self.repository = repository or ContentRepository()
         self.storage_service = storage_service or StorageService()
+        self.cache_client = cache_client or redis_cache_client
 
     async def create_content(
         self,
@@ -216,6 +225,308 @@ class ContentService:
             )
         return build_page_response(items, total, pagination)
 
+    async def like_content(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+    ) -> ContentInteractionMutationResponse:
+        async with session.begin():
+            item = await self._require_interactable_content(session, content_id)
+            existing = await self.repository.get_content_like(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+            )
+            if existing is None:
+                await self.repository.create_content_like(
+                    session,
+                    user_id=user_id,
+                    content_item_id=content_id,
+                )
+                await self.repository.increment_content_counters(
+                    session,
+                    content_id=content_id,
+                    likes_delta=1,
+                    hot_score_delta=1.0,
+                )
+                await self.repository.increment_author_likes_received(
+                    session,
+                    author_user_id=item.author_id,
+                    delta=1,
+                )
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def unlike_content(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+    ) -> ContentInteractionMutationResponse:
+        async with session.begin():
+            item = await self._require_interactable_content(session, content_id)
+            existing = await self.repository.get_content_like(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+            )
+            if existing is not None:
+                await self.repository.delete_content_like(session, existing)
+                await self.repository.increment_content_counters(
+                    session,
+                    content_id=content_id,
+                    likes_delta=-1,
+                    hot_score_delta=-1.0,
+                )
+                await self.repository.increment_author_likes_received(
+                    session,
+                    author_user_id=item.author_id,
+                    delta=-1,
+                )
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def favorite_content(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+    ) -> ContentInteractionMutationResponse:
+        async with session.begin():
+            await self._require_interactable_content(session, content_id)
+            existing = await self.repository.get_content_favorite(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+            )
+            if existing is None:
+                await self.repository.create_content_favorite(
+                    session,
+                    user_id=user_id,
+                    content_item_id=content_id,
+                )
+                await self.repository.increment_content_counters(
+                    session,
+                    content_id=content_id,
+                    favorites_delta=1,
+                    hot_score_delta=1.5,
+                )
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def unfavorite_content(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+    ) -> ContentInteractionMutationResponse:
+        async with session.begin():
+            await self._require_interactable_content(session, content_id)
+            existing = await self.repository.get_content_favorite(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+            )
+            if existing is not None:
+                await self.repository.delete_content_favorite(session, existing)
+                await self.repository.increment_content_counters(
+                    session,
+                    content_id=content_id,
+                    favorites_delta=-1,
+                    hot_score_delta=-1.5,
+                )
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def share_content(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+        payload: ContentShareRequest,
+    ) -> ContentInteractionMutationResponse:
+        async with session.begin():
+            await self._require_interactable_content(session, content_id)
+            await self.repository.create_content_share(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+                share_channel=payload.share_channel.strip().lower(),
+            )
+            await self.repository.increment_content_counters(
+                session,
+                content_id=content_id,
+                shares_delta=1,
+                hot_score_delta=1.2,
+            )
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def list_comments(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        pagination: PaginationParams,
+    ) -> ContentCommentListResponse:
+        await self._ensure_content_exists(session, content_id)
+
+        cache_key = self._build_comments_cache_key(
+            content_id=content_id,
+            page=pagination.page,
+            page_size=pagination.page_size,
+        )
+        cached = await self.cache_client.get_json(cache_key)
+        if isinstance(cached, dict):
+            return ContentCommentListResponse.model_validate(cached)
+
+        rows, total = await self.repository.list_content_comments_rows(
+            session,
+            content_item_id=content_id,
+            offset=pagination.offset,
+            limit=pagination.page_size,
+        )
+        items = [await self._build_comment_response(row) for row in rows]
+        response = ContentCommentListResponse(
+            list=items,
+            page=pagination.page,
+            page_size=pagination.page_size,
+            total=total,
+            has_more=(pagination.page * pagination.page_size) < total,
+        )
+        await self.cache_client.set_json(cache_key, response.model_dump(mode="json"))
+        return response
+
+    async def create_comment(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+        payload: ContentCommentCreateRequest,
+    ) -> ContentCommentResponse:
+        comment_body = payload.content.strip()
+        if not comment_body:
+            raise BadRequestError(message="Comment content cannot be empty.")
+
+        async with session.begin():
+            item = await self._require_interactable_content(session, content_id)
+            if not item.allow_comment:
+                raise BadRequestError(message="Comments are disabled for this content.")
+
+            parent_id = None
+            root_id = None
+            reply_to_user_id = None
+            if payload.parent_id is not None:
+                parent = await self.repository.get_content_comment_by_id(session, payload.parent_id)
+                if parent is None or parent.deleted_at is not None or parent.content_item_id != content_id:
+                    raise BadRequestError(message="Parent comment does not exist.")
+                parent_id = parent.id
+                root_id = parent.root_id or parent.id
+                reply_to_user_id = parent.user_id
+
+            comment = await self.repository.create_content_comment(
+                session,
+                content_item_id=content_id,
+                user_id=user_id,
+                content=comment_body,
+                parent_id=parent_id,
+                root_id=root_id,
+                reply_to_user_id=reply_to_user_id,
+            )
+            await self.repository.increment_content_counters(
+                session,
+                content_id=content_id,
+                comments_delta=1,
+                hot_score_delta=1.8,
+            )
+
+        await self._invalidate_comment_caches(content_id)
+        comments = await self.list_comments(
+            session,
+            content_id=content_id,
+            pagination=PaginationParams(page=1, page_size=1),
+        )
+        for item in comments.list:
+            if item.id == comment.id:
+                return item
+        row = await self.repository.list_content_comments_rows(
+            session,
+            content_item_id=content_id,
+            offset=0,
+            limit=1,
+        )
+        if row[0]:
+            return await self._build_comment_response(row[0][0])
+        raise NotFoundError(message="Comment not found after creation.")
+
+    async def report_watch_progress(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+        payload: ContentWatchProgressRequest,
+    ) -> ContentInteractionMutationResponse:
+        watch_seconds = max(0, int(payload.watch_seconds))
+        watch_progress = max(0.0, min(100.0, float(payload.watch_progress)))
+        last_position_seconds = max(0, int(payload.last_position_seconds))
+        reported_completed = bool(payload.completed or watch_progress >= 95)
+        now = utc_now_naive()
+        today = now.date()
+
+        async with session.begin():
+            await self._require_interactable_content(session, content_id)
+            history = await self.repository.get_view_history_for_day(
+                session,
+                user_id=user_id,
+                content_item_id=content_id,
+                view_date=today,
+            )
+            interaction = await self.repository.get_content_detail_row(
+                session,
+                content_id=content_id,
+                viewer_user_id=user_id,
+                include_unpublished_for_author_id=user_id,
+            )
+            liked = bool(interaction["liked"]) if interaction is not None else False
+            favorited = bool(interaction["favorited"]) if interaction is not None else False
+
+            if history is None:
+                await self.repository.create_view_history(
+                    session,
+                    user_id=user_id,
+                    content_item_id=content_id,
+                    view_date=today,
+                    watch_seconds=watch_seconds,
+                    watch_progress=watch_progress,
+                    last_position_seconds=last_position_seconds,
+                    completed=reported_completed,
+                    liked=liked,
+                    favorited=favorited,
+                    last_viewed_at=now,
+                )
+                await self.repository.increment_content_counters(
+                    session,
+                    content_id=content_id,
+                    hot_score_delta=0.2 if watch_progress >= 10 else 0.05,
+                )
+                await self.repository.increment_views_count(session, content_id=content_id, delta=1)
+            else:
+                update_values = {
+                    "watch_seconds": max(history.watch_seconds, watch_seconds),
+                    "watch_progress": max(float(history.watch_progress), watch_progress),
+                    "last_position_seconds": max(history.last_position_seconds, last_position_seconds),
+                    "completed": bool(history.completed or reported_completed),
+                    "liked": liked,
+                    "favorited": favorited,
+                    "last_viewed_at": now,
+                }
+                await self.repository.update_view_history(session, history_id=history.id, values=update_values)
+
+        return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
     async def _validate_content_assets(
         self,
         session: AsyncSession,
@@ -294,6 +605,7 @@ class ContentService:
                 user_id=row["author_id"],
                 display_name=row["author_display_name"],
                 avatar_url=avatar_url,
+                is_following=bool(row["author_is_following"]),
             ),
             category=category,
             cover_url=cover_url,
@@ -313,6 +625,69 @@ class ContentService:
             quiz_count=row["quiz_count"],
             published_at=row["published_at"],
         )
+
+    async def _build_comment_response(self, row: Any) -> ContentCommentResponse:
+        avatar_url = await self.storage_service.build_access_url(
+            object_key=row["avatar_object_key"],
+            public_url=row["avatar_public_url"],
+        )
+        return ContentCommentResponse(
+            id=row["id"],
+            content_item_id=row["content_item_id"],
+            user_id=row["user_id"],
+            display_name=row["display_name"],
+            avatar_url=avatar_url,
+            content=row["content"],
+            like_count=row["like_count"],
+            parent_id=row["parent_id"],
+            root_id=row["root_id"],
+            reply_to_user_id=row["reply_to_user_id"],
+            reply_to_display_name=row["reply_to_display_name"],
+            created_at=row["created_at"],
+        )
+
+    async def _build_interaction_mutation_response(
+        self,
+        session: AsyncSession,
+        *,
+        content_id: int,
+        user_id: int,
+    ) -> ContentInteractionMutationResponse:
+        detail = await self.get_content_detail(session, content_id=content_id, viewer_user_id=user_id)
+        return ContentInteractionMutationResponse(content_id=content_id, interaction=detail.interaction)
+
+    async def _require_interactable_content(
+        self,
+        session: AsyncSession,
+        content_id: int,
+    ):
+        item = await self.repository.get_content_item_by_id_for_update(session, content_id)
+        if item is None or item.deleted_at is not None:
+            raise NotFoundError(message="Content not found.")
+        if item.visibility != "public" or item.audit_status != "approved" or item.publish_status != "published":
+            raise AuthorizationError(message="This content is not available for interaction.")
+        return item
+
+    async def _ensure_content_exists(self, session: AsyncSession, content_id: int) -> None:
+        item = await self.repository.get_content_item_by_id(session, content_id)
+        if item is None or item.deleted_at is not None:
+            raise NotFoundError(message="Content not found.")
+
+    def _build_comments_cache_key(self, *, content_id: int, page: int, page_size: int) -> str:
+        return f"{self.cache_client.settings.redis_prefix}:content:{content_id}:comments:{page}:{page_size}"
+
+    async def _invalidate_comment_caches(self, content_id: int) -> None:
+        prefix = f"{self.cache_client.settings.redis_prefix}:content:{content_id}:comments:"
+        if not self.cache_client.enabled:
+            return
+        client = await self.cache_client._get_client()
+        if client is None:
+            return
+        keys = []
+        async for key in client.scan_iter(match=f"{prefix}*"):
+            keys.append(key)
+        if keys:
+            await self.cache_client.delete(*keys)
 
     @staticmethod
     def _normalize_hashtags(hashtags: list[str] | None) -> list[str]:
