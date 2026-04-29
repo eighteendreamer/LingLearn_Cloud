@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     db_echo: bool = Field(...)
     db_pool_recycle: int = Field(...)
 
+    minio_endpoint: str = Field(...)
+    minio_access_key: str = Field(...)
+    minio_secret_key: str = Field(...)
+    minio_bucket_name: str = Field(...)
+    minio_secure: bool = Field(...)
+    minio_public_base_url: str = Field(...)
+    minio_presign_expire_seconds: int = Field(...)
+    minio_auto_create_bucket: bool = Field(...)
+
     jwt_secret_key: str = Field(...)
     jwt_algorithm: str = Field(...)
     access_token_expire_minutes: int = Field(...)

@@ -1,6 +1,23 @@
 import { useState } from "react";
-import { ArrowLeft, Upload, Play, Image, FileText, Video, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, Image, Upload, Video } from "lucide-react";
 import { Link } from "react-router";
+
+import { ApiError } from "../lib/api";
+import { uploadFileToStorage } from "../lib/storage";
+
+const categories = ["编程", "算法", "前端", "后端", "数据库", "AI/ML"];
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "上传失败，请检查后端服务和 MinIO 配置。";
+}
 
 export function Create() {
   const [title, setTitle] = useState("");
@@ -8,87 +25,122 @@ export function Create() {
   const [category, setCategory] = useState("编程");
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState("");
 
-  const categories = ["编程", "算法", "前端", "后端", "数据库", "AI/ML"];
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log({ title, description, category, coverImage, videoFile });
-    alert("作品创建功能开发中...");
+
+    if (!title.trim()) {
+      setSubmitMessage("请输入作品标题。");
+      return;
+    }
+
+    if (!videoFile) {
+      setSubmitMessage("请先上传视频文件。");
+      return;
+    }
+
+    if (!coverImage) {
+      setSubmitMessage("请先上传封面图片。");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitMessage("正在上传文件到 MinIO，请稍候...");
+
+    try {
+      const [videoAsset, coverAsset] = await Promise.all([
+        uploadFileToStorage(videoFile, "content_video"),
+        uploadFileToStorage(coverImage, "content_cover"),
+      ]);
+
+      console.log({
+        title,
+        description,
+        category,
+        video_asset_id: videoAsset.asset_id,
+        cover_asset_id: coverAsset.asset_id,
+      });
+
+      setSubmitMessage("视频和封面已上传完成，作品发布接口现在可以继续接入。");
+    } catch (error) {
+      setSubmitMessage(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
-      <div className="sticky top-0 z-10 flex items-center gap-3 p-4 bg-white/95 backdrop-blur-lg border-b border-gray-200 shadow-sm">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white/95 p-4 shadow-sm backdrop-blur-lg">
         <Link to="/">
-          <ArrowLeft className="w-6 h-6 text-gray-700" />
+          <ArrowLeft className="h-6 w-6 text-gray-700" />
         </Link>
         <div>
           <h1 className="text-lg font-semibold text-gray-900">创作中心</h1>
-          <p className="text-xs text-gray-600">分享你的学习成果</p>
+          <p className="text-xs text-gray-600">上传视频和封面，直传 MinIO 存储</p>
         </div>
       </div>
 
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="mx-auto max-w-2xl p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
+          {submitMessage ? (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              {submitMessage}
+            </div>
+          ) : null}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              作品标题
-            </label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">作品标题</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="给你的作品起个标题吧"
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              placeholder="给你的作品起一个标题"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500"
               maxLength={50}
             />
-            <p className="mt-1 text-xs text-gray-500 text-right">{title.length}/50</p>
+            <p className="mt-1 text-right text-xs text-gray-500">{title.length}/50</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              作品描述
-            </label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">作品描述</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="介绍一下你的作品吧..."
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+              placeholder="简单介绍一下这条内容"
+              className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500"
               rows={4}
               maxLength={500}
             />
-            <p className="mt-1 text-xs text-gray-500 text-right">{description.length}/500</p>
+            <p className="mt-1 text-right text-xs text-gray-500">{description.length}/500</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              分类
-            </label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">分类</label>
             <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => (
+              {categories.map((item) => (
                 <button
-                  key={cat}
+                  key={item}
                   type="button"
-                  onClick={() => setCategory(cat)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    category === cat
+                  onClick={() => setCategory(item)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                    category === item
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  {cat}
+                  {item}
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              上传视频
-            </label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">上传视频</label>
             <div
-              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
+              className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
                 videoFile
                   ? "border-emerald-500 bg-emerald-50"
                   : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
@@ -109,20 +161,22 @@ export function Create() {
                 id="video-upload"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setVideoFile(file);
+                  if (file) {
+                    setVideoFile(file);
+                  }
                 }}
               />
               <label htmlFor="video-upload" className="cursor-pointer">
                 {videoFile ? (
                   <div className="flex items-center justify-center gap-3">
-                    <Video className="w-8 h-8 text-emerald-500" />
-                    <span className="text-emerald-600 font-medium">{videoFile.name}</span>
+                    <Video className="h-8 w-8 text-emerald-500" />
+                    <span className="font-medium text-emerald-600">{videoFile.name}</span>
                   </div>
                 ) : (
                   <>
-                    <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium mb-1">点击或拖拽上传视频</p>
-                    <p className="text-gray-400 text-sm">支持 MP4、MOV 格式，最大 500MB</p>
+                    <Upload className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+                    <p className="mb-1 font-medium text-gray-600">点击或拖拽上传视频</p>
+                    <p className="text-sm text-gray-400">支持 MP4、MOV、WEBM，最大 500MB</p>
                   </>
                 )}
               </label>
@@ -130,11 +184,9 @@ export function Create() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              封面图片
-            </label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">封面图片</label>
             <div
-              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
+              className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
                 coverImage
                   ? "border-emerald-500 bg-emerald-50"
                   : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
@@ -147,20 +199,22 @@ export function Create() {
                 id="cover-upload"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) setCoverImage(file);
+                  if (file) {
+                    setCoverImage(file);
+                  }
                 }}
               />
               <label htmlFor="cover-upload" className="cursor-pointer">
                 {coverImage ? (
                   <div className="flex items-center justify-center gap-3">
-                    <Image className="w-8 h-8 text-emerald-500" />
-                    <span className="text-emerald-600 font-medium">{coverImage.name}</span>
+                    <Image className="h-8 w-8 text-emerald-500" />
+                    <span className="font-medium text-emerald-600">{coverImage.name}</span>
                   </div>
                 ) : (
                   <>
-                    <Image className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium mb-1">点击上传封面图片</p>
-                    <p className="text-gray-400 text-sm">支持 JPG、PNG 格式</p>
+                    <Image className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+                    <p className="mb-1 font-medium text-gray-600">点击上传封面图片</p>
+                    <p className="text-sm text-gray-400">支持 JPG、PNG、WEBP，最大 10MB</p>
                   </>
                 )}
               </label>
@@ -170,15 +224,16 @@ export function Create() {
           <div className="flex gap-3 pt-4">
             <Link
               to="/"
-              className="flex-1 py-3.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors text-center"
+              className="flex-1 rounded-xl bg-gray-100 py-3.5 text-center font-medium text-gray-700 transition-colors hover:bg-gray-200"
             >
               取消
             </Link>
             <button
               type="submit"
-              className="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-600 transition-all shadow-lg hover:shadow-xl"
+              disabled={isSubmitting}
+              className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 font-semibold text-white shadow-lg transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
-              发布作品
+              {isSubmitting ? "上传中..." : "发布作品"}
             </button>
           </div>
         </form>
