@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { ArrowLeft, Image, Upload, Video } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { ApiError } from "../lib/api";
+import { createContent } from "../lib/content";
 import { uploadFileToStorage, uploadMultipartFileToStorage } from "../lib/storage";
 
 const categories = ["编程", "算法", "前端", "后端", "数据库", "AI/ML"];
@@ -20,6 +21,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export function Create() {
+  const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("编程");
@@ -62,15 +64,20 @@ export function Create() {
 
       const coverAsset = await uploadFileToStorage(coverImage, "content_cover");
 
-      console.log({
-        title,
-        description,
-        category,
-        video_asset_id: videoAsset.asset_id,
+      setSubmitMessage("封面上传完成，正在发布内容...");
+      await createContent({
+        title: title.trim(),
+        summary: description.trim() || null,
         cover_asset_id: coverAsset.asset_id,
+        primary_media_asset_id: videoAsset.asset_id,
+        content_type: "short_video",
+        hashtags: [category],
       });
 
-      setSubmitMessage("视频分片上传和封面上传都已完成，作品发布接口现在可以继续接入。");
+      setSubmitMessage("作品发布成功，正在返回首页...");
+      window.setTimeout(() => {
+        navigate("/");
+      }, 800);
     } catch (error) {
       setSubmitMessage(getErrorMessage(error));
     } finally {
@@ -86,7 +93,7 @@ export function Create() {
         </Link>
         <div>
           <h1 className="text-lg font-semibold text-gray-900">创作中心</h1>
-          <p className="text-xs text-gray-600">视频走分片上传，封面走直传 MinIO</p>
+          <p className="text-xs text-gray-600">上传视频、封面并直接发布到首页 feed</p>
         </div>
       </div>
 
@@ -137,7 +144,7 @@ export function Create() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">分类</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">分类标签</label>
             <div className="flex flex-wrap gap-2">
               {categories.map((item) => (
                 <button
@@ -252,7 +259,7 @@ export function Create() {
               disabled={isSubmitting}
               className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 font-semibold text-white shadow-lg transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "上传中..." : "发布作品"}
+              {isSubmitting ? "处理中..." : "发布作品"}
             </button>
           </div>
         </form>

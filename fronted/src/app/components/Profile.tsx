@@ -228,7 +228,16 @@ export function Profile() {
                 key={work.id}
                 className="rounded-3xl bg-white p-5 shadow-sm border border-gray-100 hover:-translate-y-1 hover:shadow-lg transition-all"
               >
-                <div className="aspect-[4/5] rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-blue-100 mb-4"></div>
+                <div className="aspect-[4/5] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-blue-100 mb-4">
+                  {work.cover_url ? (
+                    <img
+                      src={work.cover_url}
+                      alt={work.title}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : null}
+                </div>
                 <h4 className="text-gray-900 font-semibold mb-2">{work.title}</h4>
                 <p className="text-sm text-gray-600 line-clamp-3">
                   {work.summary || "这条作品还没有补充简介。"}

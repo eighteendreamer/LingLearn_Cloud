@@ -13,6 +13,13 @@ class StorageService:
             content_type=mime_type,
         )
 
+    async def build_access_url(self, *, object_key: str | None, public_url: str | None) -> str | None:
+        if public_url:
+            return public_url
+        if not object_key:
+            return None
+        return await self.minio_client.create_presigned_download(object_key=object_key)
+
     async def initiate_multipart_upload(self, *, object_key: str, mime_type: str) -> dict:
         return await self.minio_client.create_multipart_upload(
             object_key=object_key,

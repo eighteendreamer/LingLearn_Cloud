@@ -4,6 +4,7 @@ from app.common.pagination import PaginationParams, build_page_response
 from app.common.utils import utc_now_naive
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.modules.auth.repository import AuthRepository
+from app.modules.content.service import ContentService
 from app.modules.user.repository import UserRepository
 from app.modules.user.schemas import (
     CurrentUserResponse,
@@ -24,9 +25,11 @@ class UserService:
         *,
         repository: UserRepository | None = None,
         auth_repository: AuthRepository | None = None,
+        content_service: ContentService | None = None,
     ) -> None:
         self.repository = repository or UserRepository()
         self.auth_repository = auth_repository or AuthRepository()
+        self.content_service = content_service or ContentService()
 
     async def get_me(self, session: AsyncSession, user_id: int) -> CurrentUserResponse:
         bundle = await self.repository.get_user_with_profile_and_settings(session, user_id)
@@ -199,14 +202,11 @@ class UserService:
         bundle = await self.repository.get_public_user_with_profile(session, user_id)
         if bundle is None:
             raise NotFoundError(message="User not found.")
-        items, total = await self.repository.list_user_works(
+        return await self.content_service.list_author_works(
             session,
             user_id=user_id,
-            offset=pagination.offset,
-            limit=pagination.page_size,
+            pagination=pagination,
         )
-        work_items = [UserWorkListItemResponse.model_validate(item) for item in items]
-        return build_page_response(work_items, total, pagination)
 
     @staticmethod
     def _build_stats(profile) -> UserStatsResponse:

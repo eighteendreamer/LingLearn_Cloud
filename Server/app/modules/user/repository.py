@@ -142,15 +142,3 @@ class UserRepository:
             UserFollowRelation.followee_user_id == followee_user_id,
         )
         return bool(await session.scalar(stmt))
-
-    async def list_user_works(
-        self,
-        session: AsyncSession,
-        *,
-        user_id: int,
-        offset: int,
-        limit: int,
-    ) -> tuple[Sequence[dict], int]:
-        # Content module is not wired yet, so keep the contract stable with an empty list.
-        _ = session, user_id, offset, limit
-        return [], 0

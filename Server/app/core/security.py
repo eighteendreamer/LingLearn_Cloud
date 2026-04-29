@@ -182,3 +182,16 @@ async def get_current_user(
         raise AuthenticationError(message="Invalid access token.")
 
     return payload
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
+) -> TokenPayload | None:
+    if credentials is None:
+        return None
+
+    payload = decode_token(credentials.credentials)
+    if payload.token_type != TokenType.ACCESS:
+        raise AuthenticationError(message="Invalid access token.")
+
+    return payload

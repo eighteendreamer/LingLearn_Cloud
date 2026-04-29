@@ -96,3 +96,60 @@ export interface UserSettingsUpdatePayload {
   profile_public?: boolean;
   learning_data_public?: boolean;
 }
+
+export interface ContentAuthorResponse {
+  user_id: number;
+  display_name: string;
+  avatar_url: string | null;
+}
+
+export interface ContentCategoryResponse {
+  id: number;
+  name: string;
+}
+
+export interface ContentInteractionResponse {
+  views_count: number;
+  likes_count: number;
+  comments_count: number;
+  favorites_count: number;
+  shares_count: number;
+  liked: boolean;
+  favorited: boolean;
+}
+
+export interface ContentVideoResponse {
+  id: number;
+  title: string;
+  summary: string | null;
+  hashtags: string[];
+  author: ContentAuthorResponse;
+  category: ContentCategoryResponse | null;
+  cover_url: string | null;
+  video_url: string | null;
+  duration_seconds: number | null;
+  bvid: string | null;
+  interaction: ContentInteractionResponse;
+  has_quiz: boolean;
+  quiz_count: number;
+  published_at: string | null;
+}
+
+export interface FeedVideosResponse {
+  list: ContentVideoResponse[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ContentCreatePayload {
+  title: string;
+  summary?: string | null;
+  category_id?: number | null;
+  cover_asset_id: number;
+  primary_media_asset_id: number;
+  content_type?: string;
+  hashtags?: string[];
+  duration_seconds?: number | null;
+  allow_comment?: boolean;
+  allow_duet?: boolean;
+}

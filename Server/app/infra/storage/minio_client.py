@@ -42,6 +42,10 @@ class MinIOClient:
         await self.ensure_bucket_exists()
         return await asyncio.to_thread(self._create_presigned_upload, object_key, content_type)
 
+    async def create_presigned_download(self, *, object_key: str) -> str:
+        await self.ensure_bucket_exists()
+        return await asyncio.to_thread(self._create_presigned_download, object_key)
+
     async def create_multipart_upload(self, *, object_key: str, content_type: str) -> dict:
         await self.ensure_bucket_exists()
         return await asyncio.to_thread(self._create_multipart_upload, object_key, content_type)
@@ -112,6 +116,16 @@ class MinIOClient:
                 "Content-Type": content_type,
             },
         }
+
+    def _create_presigned_download(self, object_key: str) -> str:
+        try:
+            return self.client.presigned_get_object(
+                self.bucket_name,
+                object_key,
+                expires=timedelta(seconds=self.settings.minio_presign_expire_seconds),
+            )
+        except S3Error as exc:
+            raise InfrastructureError(message=f"Create MinIO download URL failed: {exc}.") from exc
 
     def _create_multipart_upload(self, object_key: str, content_type: str) -> dict:
         try:

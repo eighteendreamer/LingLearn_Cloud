@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class ContentAuthorResponse(BaseModel):
+    user_id: int
+    display_name: str
+    avatar_url: str | None = None
+
+
+class ContentCategoryResponse(BaseModel):
+    id: int
+    name: str
+
+
+class ContentInteractionResponse(BaseModel):
+    views_count: int
+    likes_count: int
+    comments_count: int
+    favorites_count: int
+    shares_count: int
+    liked: bool = False
+    favorited: bool = False
+
+
+class ContentVideoResponse(BaseModel):
+    id: int
+    title: str
+    summary: str | None = None
+    hashtags: list[str] = Field(default_factory=list)
+    author: ContentAuthorResponse
+    category: ContentCategoryResponse | None = None
+    cover_url: str | None = None
+    video_url: str | None = None
+    duration_seconds: int | None = None
+    bvid: str | None = None
+    interaction: ContentInteractionResponse
+    has_quiz: bool = False
+    quiz_count: int = 0
+    published_at: datetime | None = None
+
+
+class FeedVideosResponse(BaseModel):
+    list: list[ContentVideoResponse]
+    next_cursor: str | None = None
+    has_more: bool
+
+
+class ContentCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    summary: str | None = Field(default=None, max_length=500)
+    category_id: int | None = Field(default=None, gt=0)
+    cover_asset_id: int | None = Field(default=None, gt=0)
+    primary_media_asset_id: int | None = Field(default=None, gt=0)
+    content_type: str = Field(default="short_video", min_length=1, max_length=32)
+    hashtags: list[str] = Field(default_factory=list, max_length=20)
+    duration_seconds: int | None = Field(default=None, ge=0)
+    allow_comment: bool = True
+    allow_duet: bool = False
+
+
+class ContentUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    summary: str | None = Field(default=None, max_length=500)
+    category_id: int | None = Field(default=None, ge=1)
+    cover_asset_id: int | None = Field(default=None, ge=1)
+    primary_media_asset_id: int | None = Field(default=None, ge=1)
+    hashtags: list[str] | None = Field(default=None, max_length=20)
+    duration_seconds: int | None = Field(default=None, ge=0)
+    allow_comment: bool | None = None
+    allow_duet: bool | None = None
+
+
+class FeedQueryParams(BaseModel):
+    cursor: str | None = None
+    limit: int = Field(default=10, ge=1, le=20)
+    category_id: int | None = Field(default=None, gt=0)
+    recommend_type: str = Field(default="for_you", min_length=1, max_length=32)
