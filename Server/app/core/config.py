@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(...)
     refresh_token_expire_days: int = Field(...)
 
+    llm_provider: str = Field(...)
+    llm_api_key: str = Field(...)
+    llm_model: str = Field(...)
+    llm_base_url: str = Field(...)
+    llm_timeout_seconds: int = Field(...)
+
     docs_url: str = Field(...)
     redoc_url: str = Field(...)
     openapi_url: str = Field(...)

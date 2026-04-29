@@ -72,13 +72,13 @@ class AuthService:
         ip_address: str | None,
         user_agent: str | None,
     ) -> AuthTokenResponse:
-        user = await self.repository.get_user_by_account(session, req.account)
-        if user is None or not verify_password(req.password, user.password_hash):
-            raise AuthenticationError(message="Invalid account or password.")
-        if user.status != "active":
-            raise AuthenticationError(message="Current account is not active.")
-
         async with session.begin():
+            user = await self.repository.get_user_by_account(session, req.account)
+            if user is None or not verify_password(req.password, user.password_hash):
+                raise AuthenticationError(message="Invalid account or password.")
+            if user.status != "active":
+                raise AuthenticationError(message="Current account is not active.")
+
             await self.repository.update_last_login(
                 session,
                 user_id=user.id,
@@ -103,11 +103,10 @@ class AuthService:
             raise AuthenticationError(message="Invalid refresh token.")
 
         token_hash = hash_refresh_token(req.refresh_token)
-        record = await self.repository.get_refresh_token_by_hash(session, token_hash)
-        self._validate_refresh_record(record)
-
         now = utc_now_naive()
         async with session.begin():
+            record = await self.repository.get_refresh_token_by_hash(session, token_hash)
+            self._validate_refresh_record(record)
             await self.repository.mark_refresh_token_used(session, token_id=record.id, at=now)
 
         access_token = create_access_token(subject=payload.sub, roles=payload.roles)

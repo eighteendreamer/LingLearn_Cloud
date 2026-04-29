@@ -1,98 +1,143 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Eye, EyeOff, GraduationCap, Mail, Lock, User } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Lock, Mail, User } from "lucide-react";
+
+import { ApiError } from "../lib/api";
+import { loginWithPassword, registerWithPassword } from "../lib/account";
+import { hasSession } from "../lib/session";
 
 export function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
+    account: "",
     username: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.username.trim()) {
-      newErrors.username = "请输入用户名";
-    } else if (formData.username.length < 3) {
-      newErrors.username = "用户名至少3个字符";
+  useEffect(() => {
+    if (hasSession()) {
+      navigate("/profile", { replace: true });
     }
+  }, [navigate]);
 
-    if (!formData.email.trim()) {
-      newErrors.email = "请输入邮箱";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "请输入有效的邮箱地址";
+  const validateForm = () => {
+    const nextErrors: Record<string, string> = {};
+
+    if (isLogin) {
+      if (!formData.account.trim()) {
+        nextErrors.account = "请输入用户名或邮箱";
+      }
+    } else {
+      if (!formData.username.trim()) {
+        nextErrors.username = "请输入用户名";
+      } else if (formData.username.trim().length < 3) {
+        nextErrors.username = "用户名至少 3 个字符";
+      }
+
+      if (!formData.email.trim()) {
+        nextErrors.email = "请输入邮箱";
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        nextErrors.email = "请输入有效的邮箱地址";
+      }
     }
 
     if (!formData.password) {
-      newErrors.password = "请输入密码";
+      nextErrors.password = "请输入密码";
     } else if (formData.password.length < 6) {
-      newErrors.password = "密码至少6个字符";
+      nextErrors.password = "密码至少 6 个字符";
     }
 
     if (!isLogin) {
       if (!formData.confirmPassword) {
-        newErrors.confirmPassword = "请确认密码";
+        nextErrors.confirmPassword = "请再次输入密码";
       } else if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = "两次输入的密码不一致";
+        nextErrors.confirmPassword = "两次输入的密码不一致";
       }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateForm()) return;
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitError("");
+
+    if (!validateForm()) {
+      return;
+    }
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log("登录/注册成功:", formData);
-      navigate("/");
+      if (isLogin) {
+        await loginWithPassword({
+          account: formData.account.trim(),
+          password: formData.password,
+        });
+      } else {
+        const username = formData.username.trim();
+        await registerWithPassword({
+          username,
+          email: formData.email.trim(),
+          password: formData.password,
+          display_name: username,
+        });
+      }
+      navigate("/profile", { replace: true });
     } catch (error) {
-      console.error("提交失败:", error);
+      if (error instanceof ApiError) {
+        setSubmitError(error.message);
+      } else {
+        setSubmitError("请求失败，请稍后重试");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    setFormData((previous) => ({ ...previous, [name]: value }));
+    setSubmitError("");
+
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
+      setErrors((previous) => ({ ...previous, [name]: "" }));
     }
   };
 
   const switchMode = () => {
-    setIsLogin(!isLogin);
+    setIsLogin((previous) => !previous);
     setErrors({});
+    setSubmitError("");
+    setFormData({
+      account: "",
+      username: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    });
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-400 via-teal-400 to-blue-500 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 hover:scale-105 transition-transform">
             <GraduationCap className="w-10 h-10 text-emerald-600" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">智慧学习平台</h1>
-          <p className="text-emerald-100">让学习更智能，让成长更高效</p>
+          <h1 className="text-3xl font-bold text-white mb-2">智能学习平台</h1>
+          <p className="text-emerald-100">登录后即可同步你的学习档案与个性化设置</p>
         </div>
 
-        {/* 登录卡片 */}
         <div className="bg-white rounded-3xl shadow-2xl p-8">
-          {/* Tab 切换 */}
           <div className="flex mb-8 bg-gray-100 rounded-xl p-1">
             <button
               onClick={() => setIsLogin(true)}
@@ -101,6 +146,7 @@ export function Auth() {
                   ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md"
                   : "text-gray-600 hover:text-gray-900"
               }`}
+              type="button"
             >
               登录
             </button>
@@ -111,66 +157,89 @@ export function Auth() {
                   ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md"
                   : "text-gray-600 hover:text-gray-900"
               }`}
+              type="button"
             >
               注册
             </button>
           </div>
 
-          {/* 表单 */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* 用户名 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                用户名
-              </label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  placeholder="请输入用户名"
-                  className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                    errors.username ? "border-red-500" : "border-gray-200"
-                  }`}
-                />
+            {isLogin ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  账号
+                </label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="account"
+                    value={formData.account}
+                    onChange={handleInputChange}
+                    placeholder="请输入用户名或邮箱"
+                    className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
+                      errors.account ? "border-red-500" : "border-gray-200"
+                    }`}
+                  />
+                </div>
+                {errors.account && (
+                  <p className="mt-1.5 text-sm text-red-500">{errors.account}</p>
+                )}
               </div>
-              {errors.username && (
-                <p className="mt-1.5 text-sm text-red-500">{errors.username}</p>
-              )}
-            </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    用户名
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleInputChange}
+                      placeholder="请输入用户名"
+                      className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
+                        errors.username ? "border-red-500" : "border-gray-200"
+                      }`}
+                    />
+                  </div>
+                  {errors.username && (
+                    <p className="mt-1.5 text-sm text-red-500">{errors.username}</p>
+                  )}
+                </div>
 
-            {/* 邮箱 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                邮箱
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder="请输入邮箱"
-                  className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                    errors.email ? "border-red-500" : "border-gray-200"
-                  }`}
-                />
-              </div>
-              {errors.email && (
-                <p className="mt-1.5 text-sm text-red-500">{errors.email}</p>
-              )}
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    邮箱
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      placeholder="请输入邮箱"
+                      className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
+                        errors.email ? "border-red-500" : "border-gray-200"
+                      }`}
+                    />
+                  </div>
+                  {errors.email && (
+                    <p className="mt-1.5 text-sm text-red-500">{errors.email}</p>
+                  )}
+                </div>
+              </>
+            )}
 
-            {/* 密码 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 密码
               </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
@@ -183,8 +252,8 @@ export function Auth() {
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  onClick={() => setShowPassword((previous) => !previous)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   {showPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -198,14 +267,13 @@ export function Auth() {
               )}
             </div>
 
-            {/* 确认密码（仅注册） */}
             {!isLogin && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   确认密码
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     name="confirmPassword"
@@ -218,8 +286,8 @@ export function Auth() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    onClick={() => setShowConfirmPassword((previous) => !previous)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="w-5 h-5" />
@@ -234,66 +302,34 @@ export function Auth() {
               </div>
             )}
 
-            {/* 忘记密码（仅登录） */}
-            {isLogin && (
-              <div className="flex items-center justify-end">
-                <button
-                  type="button"
-                  className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
-                >
-                  忘记密码？
-                </button>
+            {submitError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {submitError}
               </div>
             )}
 
-            {/* 提交按钮 */}
             <button
               type="submit"
               disabled={isLoading}
               className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  处理中...
-                </span>
-              ) : isLogin ? (
-                "登录"
-              ) : (
-                "注册"
-              )}
+              {isLoading ? "处理中..." : isLogin ? "登录" : "注册"}
             </button>
           </form>
 
-          {/* 切换登录/注册 */}
           <div className="mt-6 text-center">
             <p className="text-gray-600 text-sm">
-              {isLogin ? "还没有账号？" : "已有账号？"}
+              {isLogin ? "还没有账号？" : "已经有账号了？"}
               <button
                 onClick={switchMode}
                 className="text-emerald-600 hover:text-emerald-700 font-medium ml-1 transition-colors"
+                type="button"
               >
                 {isLogin ? "立即注册" : "立即登录"}
               </button>
             </p>
           </div>
 
-          {/* 分隔线和游客模式 */}
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -311,18 +347,6 @@ export function Auth() {
             </Link>
           </div>
         </div>
-
-        {/* 用户协议 */}
-        <p className="text-center text-emerald-100 text-sm mt-6">
-          登录即表示同意{" "}
-          <a href="#" className="underline hover:text-white transition-colors">
-            用户协议
-          </a>{" "}
-          和{" "}
-          <a href="#" className="underline hover:text-white transition-colors">
-            隐私政策
-          </a>
-        </p>
       </div>
     </div>
   );

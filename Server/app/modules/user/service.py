@@ -47,20 +47,6 @@ class UserService:
         user_updates: dict = {}
         profile_updates: dict = {}
 
-        if req.email is not None:
-            if await self.auth_repository.email_exists(session, req.email, exclude_user_id=user_id):
-                raise ConflictError(message="Email already exists.")
-            user_updates["email"] = str(req.email)
-
-        if req.phone is not None:
-            if req.phone and await self.auth_repository.phone_exists(
-                session,
-                req.phone,
-                exclude_user_id=user_id,
-            ):
-                raise ConflictError(message="Phone already exists.")
-            user_updates["phone"] = req.phone or None
-
         for field_name in [
             "display_name",
             "bio",
@@ -74,8 +60,30 @@ class UserService:
                 profile_updates[field_name] = value
 
         async with session.begin():
+            if req.email is not None:
+                if await self.auth_repository.email_exists(
+                    session,
+                    req.email,
+                    exclude_user_id=user_id,
+                ):
+                    raise ConflictError(message="Email already exists.")
+                user_updates["email"] = str(req.email)
+
+            if req.phone is not None:
+                if req.phone and await self.auth_repository.phone_exists(
+                    session,
+                    req.phone,
+                    exclude_user_id=user_id,
+                ):
+                    raise ConflictError(message="Phone already exists.")
+                user_updates["phone"] = req.phone or None
+
             await self.repository.update_user_fields(session, user_id=user_id, values=user_updates)
-            await self.repository.update_profile_fields(session, user_id=user_id, values=profile_updates)
+            await self.repository.update_profile_fields(
+                session,
+                user_id=user_id,
+                values=profile_updates,
+            )
 
         return await self.get_me(session, user_id)
 
@@ -133,17 +141,17 @@ class UserService:
     ) -> UserFollowActionResponse:
         if follower_user_id == followee_user_id:
             raise BadRequestError(message="You cannot follow yourself.")
-        target = await self.repository.get_public_user_with_profile(session, followee_user_id)
-        if target is None:
-            raise NotFoundError(message="Target user not found.")
+        async with session.begin():
+            target = await self.repository.get_public_user_with_profile(session, followee_user_id)
+            if target is None:
+                raise NotFoundError(message="Target user not found.")
 
-        relation = await self.repository.get_follow_relation(
-            session,
-            follower_user_id=follower_user_id,
-            followee_user_id=followee_user_id,
-        )
-        if relation is None:
-            async with session.begin():
+            relation = await self.repository.get_follow_relation(
+                session,
+                follower_user_id=follower_user_id,
+                followee_user_id=followee_user_id,
+            )
+            if relation is None:
                 await self.repository.create_follow_relation(
                     session,
                     follower_user_id=follower_user_id,
@@ -165,13 +173,13 @@ class UserService:
         follower_user_id: int,
         followee_user_id: int,
     ) -> UserFollowActionResponse:
-        relation = await self.repository.get_follow_relation(
-            session,
-            follower_user_id=follower_user_id,
-            followee_user_id=followee_user_id,
-        )
-        if relation is not None:
-            async with session.begin():
+        async with session.begin():
+            relation = await self.repository.get_follow_relation(
+                session,
+                follower_user_id=follower_user_id,
+                followee_user_id=followee_user_id,
+            )
+            if relation is not None:
                 await self.repository.delete_follow_relation(session, relation_id=relation.id)
                 await self.repository.increment_follow_counts(
                     session,
