@@ -12,6 +12,7 @@ import {
   Share2,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import { Link } from "react-router";
 
@@ -151,13 +152,33 @@ export function VideoFeed() {
   const [commentError, setCommentError] = useState("");
   const [replyTarget, setReplyTarget] = useState<ContentCommentResponse | null>(null);
   const [expandedReplyRootIds, setExpandedReplyRootIds] = useState<number[]>([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const touchStartY = useRef(0);
   const previousActiveVideoIdRef = useRef<number | null>(null);
   const watchReportedSecondsRef = useRef<Record<number, number>>({});
 
-  const currentVideo = videos[currentIndex] ?? null;
+  const filteredVideos = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) {
+      return videos;
+    }
+
+    return videos.filter((video) => {
+      const haystacks = [
+        video.title,
+        video.summary || "",
+        video.author.display_name,
+        video.category?.name || "",
+        ...(video.hashtags || []),
+      ];
+      return haystacks.some((item) => item.toLowerCase().includes(keyword));
+    });
+  }, [searchQuery, videos]);
+
+  const currentVideo = filteredVideos[currentIndex] ?? null;
   const currentInteraction = currentVideo
     ? interactionState[currentVideo.id] ?? buildInitialInteractionState(currentVideo)
     : null;
@@ -245,7 +266,7 @@ export function VideoFeed() {
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
-  }, [videos.length, isCommentOpen]);
+  }, [filteredVideos.length, isCommentOpen]);
 
   useEffect(() => {
     if (!actionMessage) {
@@ -366,11 +387,23 @@ export function VideoFeed() {
       return;
     }
     if (diff > 0) {
-      setCurrentIndex((previous) => Math.min(previous + 1, videos.length - 1));
+      setCurrentIndex((previous) => Math.min(previous + 1, filteredVideos.length - 1));
     } else {
       setCurrentIndex((previous) => Math.max(previous - 1, 0));
     }
   };
+
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [feedMode, searchQuery]);
+
+  useEffect(() => {
+    if (!filteredVideos.length) {
+      setCurrentIndex(0);
+      return;
+    }
+    setCurrentIndex((previous) => Math.min(previous, filteredVideos.length - 1));
+  }, [filteredVideos.length]);
 
   const handleToggleFollow = async (event: MouseEvent<HTMLButtonElement>, authorUserId: number) => {
     event.stopPropagation();
@@ -529,18 +562,26 @@ export function VideoFeed() {
     );
   }
 
-  if (!videos.length) {
+  if (!videos.length || !filteredVideos.length) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-6">
         <div className="max-w-md rounded-2xl border border-emerald-100 bg-white p-6 text-center shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">
-            {feedMode === "following" ? "还没有关注内容" : "首页还没有视频"}
+            {!videos.length
+              ? feedMode === "following"
+                ? "还没有关注内容"
+                : "首页还没有视频"
+              : "没有找到相关内容"}
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            {feedMode === "following" ? "先去关注一些创作者，关注流就会展示他们的内容。" : "先去创作中心发布一条内容吧。"}
+            {!videos.length
+              ? feedMode === "following"
+                ? "先去关注一些创作者，关注流就会展示他们的内容。"
+                : "先去创作中心发布一条内容吧。"
+              : `没有搜到和“${searchQuery.trim()}”相关的视频。`}
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
-            {feedMode === "following" ? (
+            {!videos.length && feedMode === "following" ? (
               <button
                 type="button"
                 onClick={() => setFeedMode("for_you")}
@@ -549,12 +590,25 @@ export function VideoFeed() {
                 去看推荐
               </button>
             ) : null}
-            <Link
-              to="/create"
-              className="inline-flex rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-white"
-            >
-              去发布
-            </Link>
+            {videos.length ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setIsSearchOpen(false);
+                }}
+                className="inline-flex rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-white"
+              >
+                清空搜索
+              </button>
+            ) : (
+              <Link
+                to="/create"
+                className="inline-flex rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-white"
+              >
+                去发布
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -588,10 +642,41 @@ export function VideoFeed() {
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
-            <Link to="/discover">
-              <Search className="h-6 w-6 text-white" />
-            </Link>
+          <div className="flex items-center gap-3">
+            {isSearchOpen ? (
+              <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-2 backdrop-blur-md">
+                <Search className="h-4 w-4 text-white/80" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="搜索标题、作者、分类"
+                  className="w-40 bg-transparent text-sm text-white placeholder:text-white/45 focus:outline-none"
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsSearchOpen(false);
+                    setSearchQuery("");
+                  }}
+                  className="text-white/70 transition hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsSearchOpen(true);
+                }}
+                className="rounded-2xl border border-white/20 bg-black/25 p-2.5 text-white backdrop-blur-md transition hover:bg-black/40"
+              >
+                <Search className="h-6 w-6" />
+              </button>
+            )}
             <Link
               to="/create"
               className="rounded-full border border-white/30 bg-white/20 px-3 py-2 text-xs font-bold text-white backdrop-blur-sm"
@@ -611,7 +696,7 @@ export function VideoFeed() {
           className="absolute inset-0 transition-transform duration-500 ease-out"
           style={{ transform: `translateY(-${currentIndex * 100}vh)` }}
         >
-          {videos.map((video, index) => {
+          {filteredVideos.map((video, index) => {
             const state = interactionState[video.id] ?? buildInitialInteractionState(video);
             const isFollowing = followState[video.author.user_id] ?? video.author.is_following;
 
@@ -768,7 +853,7 @@ export function VideoFeed() {
         </div>
 
         <div className="absolute left-1/2 top-6 z-30 flex -translate-x-1/2 gap-1">
-          {videos.map((_, index) => (
+          {filteredVideos.map((_, index) => (
             <div
               key={index}
               className={`h-1 rounded-full transition-all ${index === currentIndex ? "w-8 bg-emerald-500" : "w-1 bg-gray-400"}`}

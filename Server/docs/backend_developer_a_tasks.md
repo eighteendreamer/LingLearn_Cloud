@@ -22,7 +22,7 @@
 - `auth`
 - `user`
 - `storage`
-- `content`
+  - `content`
 - `social`
 - `discover`
 - `search`
