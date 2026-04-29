@@ -1,0 +1,53 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.enums import AppEnv
+
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    app_name: str = Field(...)
+    app_env: AppEnv = Field(...)
+    debug: bool = Field(...)
+
+    api_v1_prefix: str = Field(...)
+    host: str = Field(...)
+    port: int = Field(...)
+
+    log_level: str = Field(...)
+    cors_origins: str = Field(...)
+
+    database_url: str = Field(...)
+    db_echo: bool = Field(...)
+    db_pool_recycle: int = Field(...)
+
+    jwt_secret_key: str = Field(...)
+    jwt_algorithm: str = Field(...)
+    access_token_expire_minutes: int = Field(...)
+    refresh_token_expire_days: int = Field(...)
+
+    docs_url: str = Field(...)
+    redoc_url: str = Field(...)
+    openapi_url: str = Field(...)
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        if self.cors_origins.strip() == "*":
+            return ["*"]
+        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
