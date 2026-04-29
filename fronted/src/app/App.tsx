@@ -5,7 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 export default function App() {
   return (
     <ErrorBoundary>
-      <div className="h-screen w-screen overflow-hidden">
+      <div className="min-h-screen w-full">
         <RouterProvider router={router} />
       </div>
     </ErrorBoundary>

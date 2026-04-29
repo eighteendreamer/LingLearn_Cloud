@@ -184,6 +184,23 @@ export function VideoFeed() {
     : null;
   const commentThreads = useMemo(() => buildCommentThreads(comments), [comments]);
 
+  const applyFeedResponse = (items: ContentVideoResponse[]) => {
+    setVideos(items);
+    setCurrentIndex(0);
+    setInteractionState(
+      items.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
+        accumulator[item.id] = buildInitialInteractionState(item);
+        return accumulator;
+      }, {}),
+    );
+    setFollowState(
+      items.reduce<Record<number, boolean>>((accumulator, item) => {
+        accumulator[item.author.user_id] = item.author.is_following;
+        return accumulator;
+      }, {}),
+    );
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -194,20 +211,7 @@ export function VideoFeed() {
         if (cancelled) {
           return;
         }
-        setVideos(response.list);
-        setCurrentIndex(0);
-        setInteractionState(
-          response.list.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
-            accumulator[item.id] = buildInitialInteractionState(item);
-            return accumulator;
-          }, {}),
-        );
-        setFollowState(
-          response.list.reduce<Record<number, boolean>>((accumulator, item) => {
-            accumulator[item.author.user_id] = item.author.is_following;
-            return accumulator;
-          }, {}),
-        );
+        applyFeedResponse(response.list);
         setErrorMessage("");
       } catch (error) {
         if (cancelled) {
@@ -253,12 +257,12 @@ export function VideoFeed() {
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
-      if (!videos.length || isCommentOpen) {
+      if (!filteredVideos.length || isCommentOpen) {
         return;
       }
       event.preventDefault();
       if (event.deltaY > 0) {
-        setCurrentIndex((previous) => Math.min(previous + 1, videos.length - 1));
+        setCurrentIndex((previous) => Math.min(previous + 1, filteredVideos.length - 1));
       } else {
         setCurrentIndex((previous) => Math.max(previous - 1, 0));
       }
@@ -422,6 +426,23 @@ export function VideoFeed() {
         ...previous,
         [authorUserId]: response.is_following,
       }));
+      setVideos((previous) =>
+        previous.map((item) =>
+          item.author.user_id === authorUserId
+            ? {
+                ...item,
+                author: {
+                  ...item.author,
+                  is_following: response.is_following,
+                },
+              }
+            : item,
+        ),
+      );
+      if (feedMode === "following") {
+        const followingFeed = await fetchFeedVideos(undefined, "following");
+        applyFeedResponse(followingFeed.list);
+      }
       setActionMessage(response.is_following ? "已关注该作者" : "已取消关注");
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "关注操作失败");

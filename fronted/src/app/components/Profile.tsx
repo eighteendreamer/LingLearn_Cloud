@@ -69,6 +69,15 @@ export function Profile() {
     { name: "学习报告", path: "/report", icon: Calendar, desc: "阶段总结", color: "from-green-500 to-emerald-500" },
   ];
 
+  const learningToolCards = [
+    { name: "AI 助手", path: "/ai-chat", icon: MessageCircle, desc: "智能对话学习与即时答疑", color: "from-sky-500 to-cyan-500", badge: "推荐", featured: true, meta: "对话答疑 · 学习建议" },
+    { name: "学生画像", path: "/student-profile", icon: Brain, desc: "学习能力分析与阶段特征", color: "from-purple-500 to-pink-500", meta: "能力分析" },
+    { name: "学习路径", path: "/learning-path", icon: Target, desc: "个性化规划与目标推进", color: "from-emerald-500 to-teal-500", meta: "规划路线" },
+    { name: "在线练习", path: "/practice", icon: BookOpen, desc: "随时训练，快速进入练习状态", color: "from-orange-500 to-red-500", meta: "立即训练" },
+    { name: "学习评估", path: "/assessment", icon: BarChart3, desc: "过程分析与薄弱项识别", color: "from-indigo-500 to-purple-500", meta: "查看评估" },
+    { name: "学习报告", path: "/report", icon: Calendar, desc: "阶段总结与学习成果回顾", color: "from-green-500 to-emerald-500", meta: "阶段总结" },
+  ];
+
   if (isLoading && !currentUser) {
     return (
       <div className="h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-emerald-50">
@@ -184,6 +193,59 @@ export function Profile() {
           )}
         </div>
 
+        <div className="px-6 mb-8">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">学习工具</h3>
+              <p className="mt-1 text-sm text-gray-500">把常用能力入口集中到一起，继续你的学习节奏。</p>
+            </div>
+            <div className="hidden rounded-full border border-emerald-100 bg-white/85 px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm md:block">
+              6 个工具可用
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {learningToolCards.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <Link
+                  key={tool.path}
+                  to={tool.path}
+                  className={`group relative overflow-hidden rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
+                    tool.featured ? "md:col-span-2 xl:col-span-1" : ""
+                  }`}
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.08),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(59,130,246,0.06),_transparent_35%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                  <div className="relative flex h-full flex-col">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${tool.color} shadow-lg shadow-black/10`}>
+                        <Icon className="h-7 w-7 text-white" />
+                      </div>
+                      {tool.badge ? (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                          {tool.badge}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-gray-400 transition-transform duration-300 group-hover:translate-x-1">
+                          进入
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative mt-5">
+                      <h4 className="text-base font-semibold text-gray-900">{tool.name}</h4>
+                      <p className="mt-1 text-sm leading-6 text-gray-500">{tool.desc}</p>
+                    </div>
+                    <div className="relative mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-xs text-gray-400">
+                      <span>{tool.meta}</span>
+                      <span className="font-medium text-gray-500 transition-transform duration-300 group-hover:translate-x-1">→</span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {false && (
         <div className="px-6 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-gray-900 font-semibold">学习工具</h3>
@@ -207,6 +269,8 @@ export function Profile() {
             })}
           </div>
         </div>
+
+        )}
 
         <div className="border-t border-gray-200">
           <div className="flex border-b border-gray-200">
