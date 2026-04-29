@@ -82,6 +82,24 @@ Server/
         models.py
         repository.py
         service.py
+      discover/
+        api.py
+        schemas.py
+        models.py
+        repository.py
+        service.py
+      search/
+        api.py
+        schemas.py
+        models.py
+        repository.py
+        service.py
+      recommendation/
+        api.py
+        schemas.py
+        models.py
+        repository.py
+        service.py
       course/
       resource/
       practice/
@@ -130,7 +148,7 @@ Server/
 - 视频流
 - 作品发布
 - 内容详情
-- 搜索基础聚合
+- 内容元数据管理
 
 #### `social`
 
@@ -139,6 +157,26 @@ Server/
 - 评论
 - 分享
 - 观看记录
+
+#### `discover`
+
+- 热门分类
+- 热门话题
+- 热门标签
+
+#### `search`
+
+- 内容搜索
+- 分类过滤
+- 搜索结果聚合
+
+#### `recommendation`
+
+- 首页 `for_you` 推荐
+- 冷启动推荐
+- 兴趣画像聚合
+- 曝光日志记录
+- 热度分计算与打散排序
 
 #### `course`
 
@@ -179,6 +217,12 @@ Server/
 - 学习路径模板
 - 用户个性化路径
 - 节点状态管理
+
+#### `notification`
+
+- 站内通知
+- 已读状态
+- 批量已读
 
 ## 5. 编码规范
 
@@ -221,9 +265,13 @@ Server/
 聚合路由统一在 `app/api/router.py` 注册：
 
 ```python
+api_router.include_router(health_router, prefix="/health", tags=["health"])
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(user_router, prefix="/users", tags=["users"])
 api_router.include_router(content_router, prefix="/contents", tags=["contents"])
+api_router.include_router(feed_router, prefix="/feed", tags=["feed"])
+api_router.include_router(discover_router, prefix="/discover", tags=["discover"])
+api_router.include_router(search_router, prefix="/search", tags=["search"])
 ```
 
 ## 6.2 依赖注入
@@ -387,6 +435,57 @@ app/infra/ai/graphs/
 
 这样后续查错会轻松很多。
 
+## 10. 推荐系统规范
+
+推荐系统属于后端一级能力，必须作为独立模块维护，不建议把全部逻辑散落在 `content` 或 `social` 模块中。
+
+### 10.1 适用范围
+
+- 首页 `for_you` 视频流
+- 新用户冷启动
+- 老用户兴趣定向推送
+- 热门内容与探索内容混排
+
+### 10.2 核心数据来源
+
+推荐必须基于以下行为数据：
+
+- `content_view_histories`
+- `content_likes`
+- `content_favorites`
+- `content_comments`
+- `content_shares`
+- `content_item_tags`
+- `content_items.hot_score`
+
+### 10.3 推荐画像要求
+
+第一期至少维护三类兴趣画像：
+
+- 用户分类兴趣画像
+- 用户标签兴趣画像
+- 用户作者兴趣画像
+
+并建议维护推荐曝光日志，支持：
+
+- 曝光记录
+- 点击率统计
+- 完播率统计
+- 收藏率统计
+- 负反馈推断
+
+### 10.4 实现原则
+
+- 新用户默认走冷启动推荐
+- 老用户按行为聚合兴趣分
+- 推荐采用“多路召回 + 排序 + 打散”
+- 已完整观看内容默认降权
+- 同作者、同分类内容避免过度连续曝光
+
+### 10.5 文档约束
+
+推荐模块的详细算法、权重和表设计，以 [recommendation_algorithm_spec.md](./recommendation_algorithm_spec.md) 为准；本规范只定义工程边界和实现要求。
+
 ## 10. Service 层规范
 
 ## 10.1 事务边界
@@ -486,6 +585,7 @@ AI 相关还必须记录：
 - `auth`
 - `content`
 - `social`
+- `recommendation`
 - `practice`
 - `learning_path`
 
@@ -515,12 +615,14 @@ test_practice_submit_should_score_correctly.py
 3. `storage`
 4. `content`
 5. `social`
-6. `course` / `resource`
-7. `practice`
-8. `assessment`
-9. `learning_path`
-10. `report`
-11. `ai_chat`
+6. `discover` / `search`
+7. `recommendation`
+8. `course` / `resource`
+9. `practice`
+10. `assessment`
+11. `learning_path`
+12. `report`
+13. `ai_chat`
 
 ## 16. 交付标准
 

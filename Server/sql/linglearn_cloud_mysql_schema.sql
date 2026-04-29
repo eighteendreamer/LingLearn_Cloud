@@ -927,6 +927,105 @@ CREATE TABLE ai_workflow_runs (
   CONSTRAINT fk_ai_workflows_user_id FOREIGN KEY (user_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='LangGraph工作流运行表';
 
+CREATE TABLE user_category_interest_profiles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  category_id BIGINT UNSIGNED NOT NULL COMMENT '分类ID',
+  interest_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '分类总兴趣分',
+  watch_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '观看贡献分',
+  like_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '点赞贡献分',
+  favorite_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '收藏贡献分',
+  comment_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '评论贡献分',
+  share_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '分享贡献分',
+  complete_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '完播贡献分',
+  negative_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '负反馈分',
+  last_interaction_at DATETIME NULL COMMENT '最近一次产生该分类行为的时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_category_interest (user_id, category_id),
+  KEY idx_user_category_interest_score (user_id, interest_score DESC, updated_at DESC),
+  KEY idx_category_interest_category_score (category_id, interest_score DESC),
+  CONSTRAINT fk_user_category_interest_user_id FOREIGN KEY (user_id) REFERENCES users (id),
+  CONSTRAINT fk_user_category_interest_category_id FOREIGN KEY (category_id) REFERENCES content_categories (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户分类兴趣画像表';
+
+CREATE TABLE user_tag_interest_profiles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  tag_id BIGINT UNSIGNED NOT NULL COMMENT '标签ID',
+  interest_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '标签总兴趣分',
+  watch_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '观看贡献分',
+  like_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '点赞贡献分',
+  favorite_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '收藏贡献分',
+  comment_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '评论贡献分',
+  share_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '分享贡献分',
+  complete_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '完播贡献分',
+  negative_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '负反馈分',
+  last_interaction_at DATETIME NULL COMMENT '最近一次产生该标签行为的时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_tag_interest (user_id, tag_id),
+  KEY idx_user_tag_interest_score (user_id, interest_score DESC, updated_at DESC),
+  KEY idx_tag_interest_tag_score (tag_id, interest_score DESC),
+  CONSTRAINT fk_user_tag_interest_user_id FOREIGN KEY (user_id) REFERENCES users (id),
+  CONSTRAINT fk_user_tag_interest_tag_id FOREIGN KEY (tag_id) REFERENCES tags (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户标签兴趣画像表';
+
+CREATE TABLE user_author_interest_profiles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  author_id BIGINT UNSIGNED NOT NULL COMMENT '作者用户ID',
+  interest_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '作者总兴趣分',
+  watch_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '观看贡献分',
+  like_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '点赞贡献分',
+  favorite_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '收藏贡献分',
+  comment_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '评论贡献分',
+  share_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '分享贡献分',
+  complete_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '完播贡献分',
+  negative_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '负反馈分',
+  last_interaction_at DATETIME NULL COMMENT '最近一次产生该作者行为的时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_author_interest (user_id, author_id),
+  KEY idx_user_author_interest_score (user_id, interest_score DESC, updated_at DESC),
+  KEY idx_author_interest_author_score (author_id, interest_score DESC),
+  CONSTRAINT fk_user_author_interest_user_id FOREIGN KEY (user_id) REFERENCES users (id),
+  CONSTRAINT fk_user_author_interest_author_id FOREIGN KEY (author_id) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户作者兴趣画像表';
+
+CREATE TABLE content_recommendation_impressions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  content_item_id BIGINT UNSIGNED NOT NULL COMMENT '内容ID',
+  scene_code VARCHAR(32) NOT NULL DEFAULT 'for_you' COMMENT '推荐场景编码',
+  recommend_type VARCHAR(32) NOT NULL DEFAULT 'for_you' COMMENT '推荐类型',
+  recall_source VARCHAR(32) NOT NULL COMMENT '召回来源：hot、category、tag、author、explore、cold_start',
+  session_id VARCHAR(64) NULL COMMENT '一次下发列表的会话ID',
+  position_no INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '在列表中的位置',
+  rank_score DECIMAL(12,4) NOT NULL DEFAULT 0.0000 COMMENT '排序分',
+  shown_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '曝光时间',
+  clicked_at DATETIME NULL COMMENT '点击时间',
+  watch_seconds INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '曝光后的观看秒数',
+  watch_progress DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '曝光后的观看进度',
+  completed TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否完播',
+  liked TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否点赞',
+  favorited TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否收藏',
+  commented TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否评论',
+  shared TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否分享',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_reco_impression_user_scene_time (user_id, scene_code, shown_at DESC),
+  KEY idx_reco_impression_content_time (content_item_id, shown_at DESC),
+  KEY idx_reco_impression_session_pos (session_id, position_no),
+  KEY idx_reco_impression_recall_source (recall_source, shown_at DESC),
+  CONSTRAINT fk_reco_impression_user_id FOREIGN KEY (user_id) REFERENCES users (id),
+  CONSTRAINT fk_reco_impression_content_item_id FOREIGN KEY (content_item_id) REFERENCES content_items (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='推荐曝光与反馈日志表';
+
 CREATE TABLE audit_logs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   user_id BIGINT UNSIGNED NULL COMMENT '用户ID',
