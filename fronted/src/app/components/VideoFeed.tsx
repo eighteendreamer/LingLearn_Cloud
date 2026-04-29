@@ -27,7 +27,7 @@ import {
   unfavoriteContent,
   unlikeContent,
 } from "../lib/content";
-import { hasSession } from "../lib/session";
+import { getStoredSession, hasSession } from "../lib/session";
 import type {
   ContentCommentResponse,
   ContentInteractionResponse,
@@ -123,6 +123,8 @@ function buildCommentThreads(items: ContentCommentResponse[]): CommentThread[] {
 }
 
 export function VideoFeed() {
+  const currentSession = getStoredSession();
+  const currentUserId = currentSession?.userId ?? null;
   const [videos, setVideos] = useState<ContentVideoResponse[]>([]);
   const [feedMode, setFeedMode] = useState<FeedMode>("for_you");
   const [interactionState, setInteractionState] = useState<Record<number, VideoInteractionState>>({});
@@ -620,19 +622,25 @@ export function VideoFeed() {
                 onClick={() => setIsPlaying((previous) => !previous)}
               >
                 {video.video_url ? (
-                  <video
-                    ref={(element) => {
-                      videoRefs.current[index] = element;
-                    }}
-                    className="absolute inset-0 h-full w-full object-cover"
-                    src={video.video_url}
-                    loop
-                    playsInline
-                    poster={video.cover_url ?? undefined}
-                  />
+                  <>
+                    <div
+                      className="absolute inset-0 bg-cover bg-center opacity-70 blur-2xl scale-110"
+                      style={{ backgroundImage: video.cover_url ? `url(${video.cover_url})` : undefined }}
+                    />
+                    <video
+                      ref={(element) => {
+                        videoRefs.current[index] = element;
+                      }}
+                      className="absolute inset-0 h-full w-full object-contain"
+                      src={video.video_url}
+                      loop
+                      playsInline
+                      poster={video.cover_url ?? undefined}
+                    />
+                  </>
                 ) : (
                   <div
-                    className="absolute inset-0 bg-cover bg-center"
+                    className="absolute inset-0 bg-contain bg-center bg-no-repeat"
                     style={{ backgroundImage: video.cover_url ? `url(${video.cover_url})` : undefined }}
                   />
                 )}
@@ -655,7 +663,7 @@ export function VideoFeed() {
                         alt={video.author.display_name}
                         className="h-12 w-12 rounded-full border-2 border-white/80 shadow-lg"
                       />
-                      {!isFollowing ? (
+                      {!isFollowing && currentUserId !== video.author.user_id ? (
                         <button
                           type="button"
                           onClick={(event) => handleToggleFollow(event, video.author.user_id)}
