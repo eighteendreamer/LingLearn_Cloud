@@ -1,3 +1,8 @@
+import base64
+import hashlib
+import hmac
+import json
+import secrets
 from datetime import timedelta
 from typing import Any, Sequence
 
@@ -19,29 +24,67 @@ class TokenPayload(BaseModel):
     roles: list[RoleCode] = Field(default_factory=list)
 
 
-def _load_jwt_module():
-    try:
-        import jwt
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("PyJWT is required for token operations.") from exc
-    return jwt
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
+
+
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
 
 
 def _encode_token(payload: dict[str, Any]) -> str:
-    jwt = _load_jwt_module()
     settings = get_settings()
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    if settings.jwt_algorithm != "HS256":
+        raise RuntimeError("Only HS256 is supported by the built-in token encoder.")
+
+    header = {"alg": settings.jwt_algorithm, "typ": "JWT"}
+    header_segment = _b64url_encode(
+        json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    payload_segment = _b64url_encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
+    signature = hmac.new(
+        settings.jwt_secret_key.encode("utf-8"),
+        signing_input,
+        hashlib.sha256,
+    ).digest()
+    signature_segment = _b64url_encode(signature)
+    return f"{header_segment}.{payload_segment}.{signature_segment}"
 
 
 def _decode_token(token: str) -> dict[str, Any]:
-    jwt = _load_jwt_module()
     settings = get_settings()
+    if settings.jwt_algorithm != "HS256":
+        raise RuntimeError("Only HS256 is supported by the built-in token decoder.")
+
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except jwt.ExpiredSignatureError as exc:
-        raise AuthenticationError(message="Token expired.") from exc
-    except jwt.PyJWTError as exc:
+        header_segment, payload_segment, signature_segment = token.split(".")
+    except ValueError as exc:
         raise AuthenticationError(message="Invalid token.") from exc
+
+    signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
+    expected_signature = hmac.new(
+        settings.jwt_secret_key.encode("utf-8"),
+        signing_input,
+        hashlib.sha256,
+    ).digest()
+    actual_signature = _b64url_decode(signature_segment)
+    if not hmac.compare_digest(expected_signature, actual_signature):
+        raise AuthenticationError(message="Invalid token.")
+
+    try:
+        payload = json.loads(_b64url_decode(payload_segment))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise AuthenticationError(message="Invalid token.") from exc
+
+    exp = payload.get("exp")
+    if exp is None or int(exp) < int(utc_now().timestamp()):
+        raise AuthenticationError(message="Token expired.")
+
+    return payload
 
 
 def create_token(
@@ -92,6 +135,40 @@ def decode_token(token: str) -> TokenPayload:
         token_type=TokenType(payload["token_type"]),
         roles=[RoleCode(role) for role in payload.get("roles", [RoleCode.USER.value])],
     )
+
+
+def hash_password(password: str) -> str:
+    iterations = 390000
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, iterations_str, salt, digest = password_hash.split("$", maxsplit=3)
+    except ValueError:
+        return False
+
+    if algorithm != "pbkdf2_sha256":
+        return False
+
+    computed = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        int(iterations_str),
+    ).hex()
+    return hmac.compare_digest(computed, digest)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 async def get_current_user(

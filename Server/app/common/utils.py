@@ -5,5 +5,9 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def utc_now_naive() -> datetime:
+    return utc_now().replace(tzinfo=None)
+
+
 def utc_now_iso() -> str:
     return utc_now().isoformat()
