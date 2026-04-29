@@ -13,6 +13,38 @@ class StorageService:
             content_type=mime_type,
         )
 
+    async def initiate_multipart_upload(self, *, object_key: str, mime_type: str) -> dict:
+        return await self.minio_client.create_multipart_upload(
+            object_key=object_key,
+            content_type=mime_type,
+        )
+
+    async def presign_upload_part(self, *, object_key: str, upload_id: str, part_number: int) -> dict:
+        return await self.minio_client.create_presigned_part_upload(
+            object_key=object_key,
+            upload_id=upload_id,
+            part_number=part_number,
+        )
+
+    async def complete_multipart_upload(
+        self,
+        *,
+        object_key: str,
+        upload_id: str,
+        parts: list[dict[str, str | int]],
+    ) -> dict:
+        return await self.minio_client.complete_multipart_upload(
+            object_key=object_key,
+            upload_id=upload_id,
+            parts=parts,
+        )
+
+    async def abort_multipart_upload(self, *, object_key: str, upload_id: str) -> None:
+        await self.minio_client.abort_multipart_upload(
+            object_key=object_key,
+            upload_id=upload_id,
+        )
+
     async def stat_uploaded_object(self, *, object_key: str) -> dict:
         return await self.minio_client.stat_object(object_key=object_key)
 

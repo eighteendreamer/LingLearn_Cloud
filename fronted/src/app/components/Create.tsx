@@ -3,7 +3,7 @@ import { ArrowLeft, Image, Upload, Video } from "lucide-react";
 import { Link } from "react-router";
 
 import { ApiError } from "../lib/api";
-import { uploadFileToStorage } from "../lib/storage";
+import { uploadFileToStorage, uploadMultipartFileToStorage } from "../lib/storage";
 
 const categories = ["编程", "算法", "前端", "后端", "数据库", "AI/ML"];
 
@@ -27,6 +27,7 @@ export function Create() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [videoProgress, setVideoProgress] = useState(0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,13 +48,19 @@ export function Create() {
     }
 
     setIsSubmitting(true);
-    setSubmitMessage("正在上传文件到 MinIO，请稍候...");
+    setVideoProgress(0);
+    setSubmitMessage("正在分片上传视频到 MinIO，请稍候...");
 
     try {
-      const [videoAsset, coverAsset] = await Promise.all([
-        uploadFileToStorage(videoFile, "content_video"),
-        uploadFileToStorage(coverImage, "content_cover"),
-      ]);
+      const videoAsset = await uploadMultipartFileToStorage(videoFile, "content_video", {
+        onProgress: (progress) => {
+          setVideoProgress(progress);
+          setSubmitMessage(`正在分片上传视频到 MinIO... ${progress}%`);
+        },
+      });
+      setSubmitMessage("视频分片上传完成，正在上传封面...");
+
+      const coverAsset = await uploadFileToStorage(coverImage, "content_cover");
 
       console.log({
         title,
@@ -63,7 +70,7 @@ export function Create() {
         cover_asset_id: coverAsset.asset_id,
       });
 
-      setSubmitMessage("视频和封面已上传完成，作品发布接口现在可以继续接入。");
+      setSubmitMessage("视频分片上传和封面上传都已完成，作品发布接口现在可以继续接入。");
     } catch (error) {
       setSubmitMessage(getErrorMessage(error));
     } finally {
@@ -79,7 +86,7 @@ export function Create() {
         </Link>
         <div>
           <h1 className="text-lg font-semibold text-gray-900">创作中心</h1>
-          <p className="text-xs text-gray-600">上传视频和封面，直传 MinIO 存储</p>
+          <p className="text-xs text-gray-600">视频走分片上传，封面走直传 MinIO</p>
         </div>
       </div>
 
@@ -88,6 +95,18 @@ export function Create() {
           {submitMessage ? (
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
               {submitMessage}
+            </div>
+          ) : null}
+
+          {isSubmitting && videoProgress > 0 ? (
+            <div className="space-y-2">
+              <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{ width: `${videoProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-emerald-700">视频上传进度 {videoProgress}%</p>
             </div>
           ) : null}
 
@@ -176,7 +195,7 @@ export function Create() {
                   <>
                     <Upload className="mx-auto mb-3 h-10 w-10 text-gray-400" />
                     <p className="mb-1 font-medium text-gray-600">点击或拖拽上传视频</p>
-                    <p className="text-sm text-gray-400">支持 MP4、MOV、WEBM，最大 500MB</p>
+                    <p className="text-sm text-gray-400">支持 MP4、MOV、WEBM，按分片上传，最大 500MB</p>
                   </>
                 )}
               </label>
