@@ -506,6 +506,7 @@ class ContentRepository:
         tag_ids: Sequence[int] | None = None,
         author_ids: Sequence[int] | None = None,
         exclude_content_ids: Sequence[int] | None = None,
+        published_after: datetime | None = None,
         published_before: datetime | None = None,
         order_by: str = "hot",
     ) -> list[dict]:
@@ -519,6 +520,8 @@ class ContentRepository:
             stmt = stmt.where(ContentItem.author_id.in_(author_ids))
         if exclude_content_ids:
             stmt = stmt.where(ContentItem.id.not_in(list(exclude_content_ids)))
+        if published_after is not None:
+            stmt = stmt.where(ContentItem.published_at >= published_after)
         if published_before is not None:
             stmt = stmt.where(ContentItem.published_at < published_before)
         if tag_ids:

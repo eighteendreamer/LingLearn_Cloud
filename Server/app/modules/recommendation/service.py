@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from math import exp
 from uuid import uuid4
@@ -21,6 +21,8 @@ class RecommendationCandidate:
 
 
 class RecommendationService:
+    NEW_CONTENT_BOOST_HOURS = 48
+
     def __init__(
         self,
         *,
@@ -48,6 +50,23 @@ class RecommendationService:
                 category_id=category_id,
                 published_before=published_before,
             )
+            fresh_rows = await self._build_fresh_explore_rows(
+                session,
+                viewer_user_id=None,
+                limit=self._fresh_insert_target(limit),
+                category_id=category_id,
+                published_before=published_before,
+                exclude_content_ids=[int(row["id"]) for row in rows],
+            )
+            rows, _ = self._merge_with_fresh_boost(
+                rows=rows,
+                candidate_items=[
+                    {"content_id": row["id"], "recall_source": "cold_start", "rank_score": 0}
+                    for row in rows
+                ],
+                fresh_rows=fresh_rows,
+                limit=limit,
+            )
             return rows, None
 
         has_profile = await self.repository.has_interest_profile(session, user_id=viewer_user_id)
@@ -59,10 +78,26 @@ class RecommendationService:
                 category_id=category_id,
                 published_before=published_before,
             )
+            rows, items = self._merge_with_fresh_boost(
+                rows=rows,
+                candidate_items=[
+                    {"content_id": row["id"], "recall_source": "cold_start", "rank_score": 0}
+                    for row in rows
+                ],
+                fresh_rows=await self._build_fresh_explore_rows(
+                    session,
+                    viewer_user_id=viewer_user_id,
+                    limit=self._fresh_insert_target(limit),
+                    category_id=category_id,
+                    published_before=published_before,
+                    exclude_content_ids=[int(row["id"]) for row in rows],
+                ),
+                limit=limit,
+            )
             session_id = await self._log_impressions(
                 session,
                 user_id=viewer_user_id,
-                items=[{"content_id": row["id"], "recall_source": "cold_start", "rank_score": 0} for row in rows],
+                items=items,
             )
             return rows, session_id
 
@@ -72,6 +107,74 @@ class RecommendationService:
             limit=limit,
             category_id=category_id,
             published_before=published_before,
+        )
+        if not rows:
+            rows = await self._build_cold_start_rows(
+                session,
+                viewer_user_id=viewer_user_id,
+                limit=limit,
+                category_id=category_id,
+                published_before=published_before,
+            )
+            rows, items = self._merge_with_fresh_boost(
+                rows=rows,
+                candidate_items=[
+                    {
+                        "content_id": row["id"],
+                        "recall_source": "fallback_cold_start",
+                        "rank_score": 0,
+                    }
+                    for row in rows
+                ],
+                fresh_rows=await self._build_fresh_explore_rows(
+                    session,
+                    viewer_user_id=viewer_user_id,
+                    limit=self._fresh_insert_target(limit),
+                    category_id=category_id,
+                    published_before=published_before,
+                    exclude_content_ids=[int(row["id"]) for row in rows],
+                ),
+                limit=limit,
+            )
+            session_id = await self._log_impressions(
+                session,
+                user_id=viewer_user_id,
+                items=items,
+            )
+            return rows, session_id
+
+        if len(rows) < limit:
+            supplement_rows = await self._build_cold_start_rows(
+                session,
+                viewer_user_id=viewer_user_id,
+                limit=limit - len(rows),
+                category_id=category_id,
+                published_before=published_before,
+                exclude_content_ids=[int(row["id"]) for row in rows],
+            )
+            if supplement_rows:
+                rows.extend(supplement_rows)
+                candidate_items.extend(
+                    {
+                        "content_id": row["id"],
+                        "recall_source": "fallback_fill",
+                        "rank_score": 0,
+                    }
+                    for row in supplement_rows
+                )
+
+        rows, candidate_items = self._merge_with_fresh_boost(
+            rows=rows,
+            candidate_items=candidate_items,
+            fresh_rows=await self._build_fresh_explore_rows(
+                session,
+                viewer_user_id=viewer_user_id,
+                limit=self._fresh_insert_target(limit),
+                category_id=category_id,
+                published_before=published_before,
+                exclude_content_ids=[int(row["id"]) for row in rows],
+            ),
+            limit=limit,
         )
         session_id = await self._log_impressions(session, user_id=viewer_user_id, items=candidate_items)
         return rows, session_id
@@ -220,13 +323,14 @@ class RecommendationService:
         viewer_user_id: int | None,
         limit: int,
         category_id: int | None,
+        exclude_content_ids: list[int] | None = None,
         published_before: datetime | None,
     ) -> list[dict]:
         hot_count = max(1, round(limit * 0.5))
         recent_count = max(1, round(limit * 0.3))
         explore_count = max(1, limit - hot_count - recent_count)
 
-        selected_ids: list[int] = []
+        selected_ids: list[int] = list(exclude_content_ids or [])
         rows: list[dict] = []
         for fetched in (
             await self.content_repository.list_recommendation_candidate_rows(
@@ -264,6 +368,29 @@ class RecommendationService:
                 if len(rows) >= limit:
                     return rows[:limit]
         return rows[:limit]
+
+    async def _build_fresh_explore_rows(
+        self,
+        session: AsyncSession,
+        *,
+        viewer_user_id: int | None,
+        limit: int,
+        category_id: int | None,
+        exclude_content_ids: list[int] | None,
+        published_before: datetime | None,
+    ) -> list[dict]:
+        if limit <= 0:
+            return []
+        return await self.content_repository.list_recommendation_candidate_rows(
+            session,
+            viewer_user_id=viewer_user_id,
+            limit=limit,
+            category_ids=[category_id] if category_id is not None else None,
+            exclude_content_ids=exclude_content_ids,
+            published_after=datetime.utcnow().replace(tzinfo=None) - timedelta(hours=self.NEW_CONTENT_BOOST_HOURS),
+            published_before=published_before,
+            order_by="recent",
+        )
 
     async def _build_personalized_rows(
         self,
@@ -493,3 +620,46 @@ class RecommendationService:
             return 0.0
         days = max((datetime.utcnow().replace(tzinfo=None) - published_at).days, 0)
         return min(exp(-days / 7) * 100, 100.0)
+
+    @staticmethod
+    def _fresh_insert_target(limit: int) -> int:
+        if limit <= 0:
+            return 0
+        return min(2, max(1, limit // 6))
+
+    @staticmethod
+    def _merge_with_fresh_boost(
+        *,
+        rows: list[dict],
+        candidate_items: list[dict],
+        fresh_rows: list[dict],
+        limit: int,
+    ) -> tuple[list[dict], list[dict]]:
+        if not fresh_rows:
+            return rows[:limit], candidate_items[:limit]
+
+        row_map = {int(row["id"]): row for row in rows}
+        item_map = {int(item["content_id"]): item for item in candidate_items}
+        ordered_ids = [int(row["id"]) for row in rows]
+
+        insert_positions = [2, 6]
+        next_insert_index = 0
+        for fresh_row in fresh_rows:
+            fresh_id = int(fresh_row["id"])
+            if fresh_id in row_map:
+                continue
+            position = insert_positions[next_insert_index] if next_insert_index < len(insert_positions) else len(ordered_ids)
+            position = min(position, len(ordered_ids))
+            ordered_ids.insert(position, fresh_id)
+            row_map[fresh_id] = fresh_row
+            item_map[fresh_id] = {
+                "content_id": fresh_id,
+                "recall_source": "fresh_boost",
+                "rank_score": 0,
+            }
+            next_insert_index += 1
+            if next_insert_index >= len(fresh_rows):
+                break
+
+        ordered_ids = ordered_ids[:limit]
+        return [row_map[content_id] for content_id in ordered_ids], [item_map[content_id] for content_id in ordered_ids]

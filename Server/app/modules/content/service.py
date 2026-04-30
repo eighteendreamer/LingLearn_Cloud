@@ -301,6 +301,9 @@ class ContentService:
         items: list[ContentInteractionBatchItemResponse] = []
 
         for item in payload.items:
+            if session.in_transaction():
+                await session.commit()
+
             if isinstance(item, ContentInteractionBatchLikeItemRequest):
                 mutation = (
                     await self.like_content(session, content_id=item.content_id, user_id=user_id)
@@ -315,6 +318,8 @@ class ContentService:
                         interaction=mutation.interaction,
                     )
                 )
+                if session.in_transaction():
+                    await session.commit()
                 continue
 
             if isinstance(item, ContentInteractionBatchFavoriteItemRequest):
@@ -331,6 +336,8 @@ class ContentService:
                         interaction=mutation.interaction,
                     )
                 )
+                if session.in_transaction():
+                    await session.commit()
                 continue
 
             if isinstance(item, ContentInteractionBatchCommentItemRequest):
@@ -357,7 +364,11 @@ class ContentService:
                         comment=comment,
                     )
                 )
+                if session.in_transaction():
+                    await session.commit()
 
+        if session.in_transaction():
+            await session.commit()
         return ContentInteractionBatchSyncResponse(items=items)
 
     async def unlike_content(

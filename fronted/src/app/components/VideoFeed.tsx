@@ -168,8 +168,12 @@ export function VideoFeed() {
   const [feedMode, setFeedMode] = useState<FeedMode>("for_you");
   const [interactionState, setInteractionState] = useState<Record<number, VideoInteractionState>>({});
   const [followState, setFollowState] = useState<Record<number, boolean>>({});
+  const [resolvedDurations, setResolvedDurations] = useState<Record<number, number>>({});
   const [syncQueue, setSyncQueue] = useState<InteractionSyncQueue>(() => readInteractionSyncQueue());
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMoreVideos, setHasMoreVideos] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -225,21 +229,65 @@ export function VideoFeed() {
     : null;
   const commentThreads = useMemo(() => buildCommentThreads(comments), [comments]);
 
-  const applyFeedResponse = (items: ContentVideoResponse[]) => {
-    setVideos(items);
-    setCurrentIndex(0);
-    setInteractionState(
-      items.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
-        accumulator[item.id] = buildQueuedInteractionState(item, syncQueueRef.current);
-        return accumulator;
-      }, {}),
-    );
-    setFollowState(
-      items.reduce<Record<number, boolean>>((accumulator, item) => {
-        accumulator[item.author.user_id] = item.author.is_following;
-        return accumulator;
-      }, {}),
-    );
+  const applyFeedResponse = (
+    items: ContentVideoResponse[],
+    options?: {
+      append?: boolean;
+      nextCursor?: string | null;
+      hasMore?: boolean;
+    },
+  ) => {
+    const append = options?.append ?? false;
+    setVideos((previous) => {
+      const merged = append ? [...previous, ...items.filter((item) => !previous.some((video) => video.id === item.id))] : items;
+
+      setResolvedDurations(
+        merged.reduce<Record<number, number>>((accumulator, item) => {
+          if (item.duration_seconds && item.duration_seconds > 0) {
+            accumulator[item.id] = item.duration_seconds;
+          }
+          return accumulator;
+        }, {}),
+      );
+      setInteractionState(
+        merged.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
+          accumulator[item.id] = buildQueuedInteractionState(item, syncQueueRef.current);
+          return accumulator;
+        }, {}),
+      );
+      setFollowState(
+        merged.reduce<Record<number, boolean>>((accumulator, item) => {
+          accumulator[item.author.user_id] = item.author.is_following;
+          return accumulator;
+        }, {}),
+      );
+
+      return merged;
+    });
+    if (!append) {
+      setCurrentIndex(0);
+    }
+    setNextCursor(options?.nextCursor ?? null);
+    setHasMoreVideos(options?.hasMore ?? false);
+  };
+
+  const handleVideoMetadataLoaded = (contentId: number, element: HTMLVideoElement | null) => {
+    if (!element) {
+      return;
+    }
+    const nextDuration = Math.max(0, Math.floor(element.duration || 0));
+    if (!nextDuration) {
+      return;
+    }
+    setResolvedDurations((previous) => {
+      if (previous[contentId] === nextDuration) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [contentId]: nextDuration,
+      };
+    });
   };
 
   useEffect(() => {
@@ -277,7 +325,11 @@ export function VideoFeed() {
         if (cancelled) {
           return;
         }
-        applyFeedResponse(response.list);
+        applyFeedResponse(response.list, {
+          append: false,
+          nextCursor: response.next_cursor,
+          hasMore: response.has_more,
+        });
         setErrorMessage("");
       } catch (error) {
         if (cancelled) {
@@ -296,6 +348,42 @@ export function VideoFeed() {
       cancelled = true;
     };
   }, [feedMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMoreFeed() {
+      if (!nextCursor || !hasMoreVideos || isLoading || isLoadingMore || isCommentOpen) {
+        return;
+      }
+      if (currentIndex < Math.max(filteredVideos.length - 3, 0)) {
+        return;
+      }
+      try {
+        setIsLoadingMore(true);
+        const response = await fetchFeedVideos(nextCursor, feedMode);
+        if (cancelled) {
+          return;
+        }
+        applyFeedResponse(response.list, {
+          append: true,
+          nextCursor: response.next_cursor,
+          hasMore: response.has_more,
+        });
+      } catch {
+        // best effort load more
+      } finally {
+        if (!cancelled) {
+          setIsLoadingMore(false);
+        }
+      }
+    }
+
+    void loadMoreFeed();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentIndex, feedMode, filteredVideos.length, hasMoreVideos, isCommentOpen, isLoading, isLoadingMore, nextCursor]);
 
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
@@ -859,6 +947,9 @@ export function VideoFeed() {
                       ref={(element) => {
                         videoRefs.current[index] = element;
                       }}
+                      onLoadedMetadata={(event) =>
+                        handleVideoMetadataLoaded(video.id, event.currentTarget)
+                      }
                       className="absolute inset-0 h-full w-full object-contain"
                       src={video.video_url}
                       loop
@@ -916,7 +1007,9 @@ export function VideoFeed() {
                   <div className="flex items-center gap-2">
                     <div className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 backdrop-blur-sm">
                       <Play className="h-3.5 w-3.5 text-white" />
-                      <span className="text-xs font-medium text-white">{formatDuration(video.duration_seconds)}</span>
+                      <span className="text-xs font-medium text-white">
+                        {formatDuration(resolvedDurations[video.id] ?? video.duration_seconds)}
+                      </span>
                     </div>
                     {video.category?.name ? (
                       <div className="rounded-lg bg-white/20 px-3 py-1.5 backdrop-blur-sm">
