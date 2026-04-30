@@ -13,8 +13,14 @@ from app.infra.storage.service import StorageService
 from app.modules.content.repository import ContentRepository
 from app.modules.content.schemas import (
     ContentAuthorResponse,
-    ContentCategoryResponse,
     ContentCommentCreateRequest,
+    ContentCategoryResponse,
+    ContentInteractionBatchCommentItemRequest,
+    ContentInteractionBatchFavoriteItemRequest,
+    ContentInteractionBatchItemResponse,
+    ContentInteractionBatchLikeItemRequest,
+    ContentInteractionBatchSyncRequest,
+    ContentInteractionBatchSyncResponse,
     ContentCommentListResponse,
     ContentCommentResponse,
     ContentCreateRequest,
@@ -284,6 +290,75 @@ class ContentService:
                     clicked_at=utc_now_naive(),
                 )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
+
+    async def sync_interactions_batch(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        payload: ContentInteractionBatchSyncRequest,
+    ) -> ContentInteractionBatchSyncResponse:
+        items: list[ContentInteractionBatchItemResponse] = []
+
+        for item in payload.items:
+            if isinstance(item, ContentInteractionBatchLikeItemRequest):
+                mutation = (
+                    await self.like_content(session, content_id=item.content_id, user_id=user_id)
+                    if item.liked
+                    else await self.unlike_content(session, content_id=item.content_id, user_id=user_id)
+                )
+                items.append(
+                    ContentInteractionBatchItemResponse(
+                        client_id=item.client_id,
+                        action=item.action,
+                        content_id=item.content_id,
+                        interaction=mutation.interaction,
+                    )
+                )
+                continue
+
+            if isinstance(item, ContentInteractionBatchFavoriteItemRequest):
+                mutation = (
+                    await self.favorite_content(session, content_id=item.content_id, user_id=user_id)
+                    if item.favorited
+                    else await self.unfavorite_content(session, content_id=item.content_id, user_id=user_id)
+                )
+                items.append(
+                    ContentInteractionBatchItemResponse(
+                        client_id=item.client_id,
+                        action=item.action,
+                        content_id=item.content_id,
+                        interaction=mutation.interaction,
+                    )
+                )
+                continue
+
+            if isinstance(item, ContentInteractionBatchCommentItemRequest):
+                comment = await self.create_comment(
+                    session,
+                    content_id=item.content_id,
+                    user_id=user_id,
+                    payload=ContentCommentCreateRequest(
+                        content=item.content,
+                        parent_id=item.parent_id,
+                    ),
+                )
+                mutation = await self._build_interaction_mutation_response(
+                    session,
+                    content_id=item.content_id,
+                    user_id=user_id,
+                )
+                items.append(
+                    ContentInteractionBatchItemResponse(
+                        client_id=item.client_id,
+                        action=item.action,
+                        content_id=item.content_id,
+                        interaction=mutation.interaction,
+                        comment=comment,
+                    )
+                )
+
+        return ContentInteractionBatchSyncResponse(items=items)
 
     async def unlike_content(
         self,

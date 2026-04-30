@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -124,3 +125,48 @@ class ContentWatchProgressRequest(BaseModel):
     watch_progress: float = Field(default=0, ge=0, le=100)
     last_position_seconds: int = Field(default=0, ge=0)
     completed: bool = False
+
+
+class ContentInteractionBatchLikeItemRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=64)
+    action: Literal["set_like"]
+    content_id: int = Field(gt=0)
+    liked: bool
+
+
+class ContentInteractionBatchFavoriteItemRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=64)
+    action: Literal["set_favorite"]
+    content_id: int = Field(gt=0)
+    favorited: bool
+
+
+class ContentInteractionBatchCommentItemRequest(BaseModel):
+    client_id: str = Field(min_length=1, max_length=64)
+    action: Literal["create_comment"]
+    content_id: int = Field(gt=0)
+    content: str = Field(min_length=1, max_length=1000)
+    parent_id: int | None = Field(default=None, gt=0)
+
+
+ContentInteractionBatchItemRequest = (
+    ContentInteractionBatchLikeItemRequest
+    | ContentInteractionBatchFavoriteItemRequest
+    | ContentInteractionBatchCommentItemRequest
+)
+
+
+class ContentInteractionBatchSyncRequest(BaseModel):
+    items: list[ContentInteractionBatchItemRequest] = Field(default_factory=list, max_length=100)
+
+
+class ContentInteractionBatchItemResponse(BaseModel):
+    client_id: str
+    action: str
+    content_id: int
+    interaction: ContentInteractionResponse
+    comment: ContentCommentResponse | None = None
+
+
+class ContentInteractionBatchSyncResponse(BaseModel):
+    items: list[ContentInteractionBatchItemResponse] = Field(default_factory=list)

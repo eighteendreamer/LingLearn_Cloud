@@ -198,3 +198,46 @@ export interface ContentWatchProgressPayload {
   last_position_seconds: number;
   completed: boolean;
 }
+
+export interface ContentInteractionBatchLikeItemPayload {
+  client_id: string;
+  action: "set_like";
+  content_id: number;
+  liked: boolean;
+}
+
+export interface ContentInteractionBatchFavoriteItemPayload {
+  client_id: string;
+  action: "set_favorite";
+  content_id: number;
+  favorited: boolean;
+}
+
+export interface ContentInteractionBatchCommentItemPayload {
+  client_id: string;
+  action: "create_comment";
+  content_id: number;
+  content: string;
+  parent_id?: number | null;
+}
+
+export type ContentInteractionBatchItemPayload =
+  | ContentInteractionBatchLikeItemPayload
+  | ContentInteractionBatchFavoriteItemPayload
+  | ContentInteractionBatchCommentItemPayload;
+
+export interface ContentInteractionBatchSyncPayload {
+  items: ContentInteractionBatchItemPayload[];
+}
+
+export interface ContentInteractionBatchItemResponse {
+  client_id: string;
+  action: string;
+  content_id: number;
+  interaction: ContentInteractionResponse;
+  comment: ContentCommentResponse | null;
+}
+
+export interface ContentInteractionBatchSyncResponse {
+  items: ContentInteractionBatchItemResponse[];
+}

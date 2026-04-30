@@ -1,5 +1,7 @@
 import { apiRequest } from "./api";
 import type {
+  ContentInteractionBatchSyncPayload,
+  ContentInteractionBatchSyncResponse,
   ContentCommentResponse,
   ContentCommentCreatePayload,
   ContentCategoryResponse,
@@ -85,6 +87,13 @@ export async function createContentComment(contentId: number, payload: ContentCo
 
 export async function reportWatchProgress(contentId: number, payload: ContentWatchProgressPayload) {
   return apiRequest<ContentInteractionMutationResponse>(`/contents/${contentId}/watch-progress`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function syncContentInteractionsBatch(payload: ContentInteractionBatchSyncPayload) {
+  return apiRequest<ContentInteractionBatchSyncResponse>("/contents/interactions/batch-sync", {
     method: "POST",
     body: JSON.stringify(payload),
   });

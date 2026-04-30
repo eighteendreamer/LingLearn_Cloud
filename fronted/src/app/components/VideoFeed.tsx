@@ -18,16 +18,24 @@ import { Link } from "react-router";
 
 import { followUser, unfollowUser } from "../lib/account";
 import {
-  createContentComment,
-  favoriteContent,
   fetchContentComments,
   fetchFeedVideos,
-  likeContent,
   reportWatchProgress,
   shareContent,
-  unfavoriteContent,
-  unlikeContent,
+  syncContentInteractionsBatch,
 } from "../lib/content";
+import {
+  buildInteractionSyncPayload,
+  buildPendingCommentResponse,
+  createPendingCommentDraft,
+  enqueueCommentAction,
+  enqueueFavoriteAction,
+  enqueueLikeAction,
+  persistInteractionSyncQueue,
+  readInteractionSyncQueue,
+  removeSyncedQueueItems,
+  type InteractionSyncQueue,
+} from "../lib/interaction-sync";
 import { getStoredSession, hasSession } from "../lib/session";
 import type {
   ContentCommentResponse,
@@ -60,6 +68,8 @@ type CommentThread = {
   root: ContentCommentResponse;
   replies: ContentCommentResponse[];
 };
+
+const INTERACTION_SYNC_INTERVAL_MS = 10000;
 
 function formatCount(value: number) {
   if (value >= 10000) {
@@ -98,6 +108,32 @@ function buildInitialInteractionState(video: ContentVideoResponse): VideoInterac
   };
 }
 
+function buildQueuedInteractionState(
+  video: ContentVideoResponse,
+  queue: InteractionSyncQueue,
+): VideoInteractionState {
+  const state = buildInitialInteractionState(video);
+  const queuedLike = queue.likes[video.id];
+  const queuedFavorite = queue.favorites[video.id];
+  const queuedCommentCount = queue.comments.filter((item) => item.content_id === video.id).length;
+
+  if (queuedLike && queuedLike.liked !== state.liked) {
+    state.likesCount = Math.max(0, state.likesCount + (queuedLike.liked ? 1 : -1));
+    state.liked = queuedLike.liked;
+  }
+
+  if (queuedFavorite && queuedFavorite.favorited !== state.favorited) {
+    state.favoritesCount = Math.max(0, state.favoritesCount + (queuedFavorite.favorited ? 1 : -1));
+    state.favorited = queuedFavorite.favorited;
+  }
+
+  if (queuedCommentCount) {
+    state.commentsCount += queuedCommentCount;
+  }
+
+  return state;
+}
+
 function buildCommentThreads(items: ContentCommentResponse[]): CommentThread[] {
   const roots = items
     .filter((item) => item.parent_id === null)
@@ -126,10 +162,13 @@ function buildCommentThreads(items: ContentCommentResponse[]): CommentThread[] {
 export function VideoFeed() {
   const currentSession = getStoredSession();
   const currentUserId = currentSession?.userId ?? null;
+  const currentUserDisplayName = currentSession?.currentUser?.profile.display_name ?? "我";
+  const currentUserAvatarUrl = null;
   const [videos, setVideos] = useState<ContentVideoResponse[]>([]);
   const [feedMode, setFeedMode] = useState<FeedMode>("for_you");
   const [interactionState, setInteractionState] = useState<Record<number, VideoInteractionState>>({});
   const [followState, setFollowState] = useState<Record<number, boolean>>({});
+  const [syncQueue, setSyncQueue] = useState<InteractionSyncQueue>(() => readInteractionSyncQueue());
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -159,6 +198,8 @@ export function VideoFeed() {
   const touchStartY = useRef(0);
   const previousActiveVideoIdRef = useRef<number | null>(null);
   const watchReportedSecondsRef = useRef<Record<number, number>>({});
+  const syncQueueRef = useRef(syncQueue);
+  const isFlushingQueueRef = useRef(false);
 
   const filteredVideos = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -189,7 +230,7 @@ export function VideoFeed() {
     setCurrentIndex(0);
     setInteractionState(
       items.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
-        accumulator[item.id] = buildInitialInteractionState(item);
+        accumulator[item.id] = buildQueuedInteractionState(item, syncQueueRef.current);
         return accumulator;
       }, {}),
     );
@@ -200,6 +241,31 @@ export function VideoFeed() {
       }, {}),
     );
   };
+
+  useEffect(() => {
+    syncQueueRef.current = syncQueue;
+    persistInteractionSyncQueue(syncQueue);
+  }, [syncQueue]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void flushInteractionQueue();
+    }, INTERACTION_SYNC_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void flushInteractionQueue();
+      }
+    };
+
+    window.addEventListener("pagehide", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("pagehide", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,6 +360,40 @@ export function VideoFeed() {
     }));
   };
 
+  const flushInteractionQueue = async () => {
+    if (!hasSession() || isFlushingQueueRef.current) {
+      return;
+    }
+
+    const snapshot = syncQueueRef.current;
+    const payload = buildInteractionSyncPayload(snapshot);
+    if (!payload.items.length) {
+      return;
+    }
+
+    isFlushingQueueRef.current = true;
+    try {
+      const response = await syncContentInteractionsBatch(payload);
+      response.items.forEach((item) => {
+        setInteractionFromResponse(item.content_id, item.interaction);
+        if (item.comment) {
+          const matchedDraft = snapshot.comments.find((draft) => draft.client_id === item.client_id);
+          if (!matchedDraft) {
+            return;
+          }
+          setComments((previous) =>
+            previous.map((comment) => (comment.id === matchedDraft.temp_comment_id ? item.comment! : comment)),
+          );
+        }
+      });
+      setSyncQueue((previous) => removeSyncedQueueItems(previous, snapshot));
+    } catch {
+      // best effort sync
+    } finally {
+      isFlushingQueueRef.current = false;
+    }
+  };
+
   const submitWatchProgress = async (contentId: number, force = false) => {
     if (!hasSession()) {
       return;
@@ -357,7 +457,12 @@ export function VideoFeed() {
     try {
       setCommentLoading(page === 1);
       const response = await fetchContentComments(contentId, page, 20);
-      setComments((previous) => (append ? [...previous, ...response.list] : response.list));
+      const pendingComments = syncQueueRef.current.comments
+        .filter((item) => item.content_id === contentId)
+        .map((item) => buildPendingCommentResponse(item, currentUserId ?? 0));
+      setComments((previous) =>
+        append ? [...previous, ...response.list] : [...pendingComments, ...response.list],
+      );
       setCommentPage(response.page);
       setCommentHasMore(response.has_more);
       setCommentError("");
@@ -453,40 +558,50 @@ export function VideoFeed() {
 
   const handleLike = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    if (!currentVideo || pendingAction) {
+    if (!currentVideo) {
       return;
     }
-    try {
-      setPendingAction(`like-${currentVideo.id}`);
-      const response = currentInteraction?.liked
-        ? await unlikeContent(currentVideo.id)
-        : await likeContent(currentVideo.id);
-      setInteractionFromResponse(currentVideo.id, response.interaction);
-      setActionMessage(currentInteraction?.liked ? "已取消点赞" : "点赞成功");
-    } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : "点赞失败");
-    } finally {
-      setPendingAction("");
+    if (!hasSession()) {
+      setActionMessage("请先登录后再点赞");
+      return;
     }
+    const nextLiked = !currentInteraction?.liked;
+    setInteractionState((previous) => {
+      const existing = previous[currentVideo.id] ?? buildQueuedInteractionState(currentVideo, syncQueueRef.current);
+      return {
+        ...previous,
+        [currentVideo.id]: {
+          ...existing,
+          liked: nextLiked,
+          likesCount: Math.max(0, existing.likesCount + (nextLiked ? 1 : -1)),
+        },
+      };
+    });
+    setSyncQueue((previous) => enqueueLikeAction(previous, currentVideo.id, nextLiked));
   };
 
   const handleFavorite = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    if (!currentVideo || pendingAction) {
+    if (!currentVideo) {
       return;
     }
-    try {
-      setPendingAction(`favorite-${currentVideo.id}`);
-      const response = currentInteraction?.favorited
-        ? await unfavoriteContent(currentVideo.id)
-        : await favoriteContent(currentVideo.id);
-      setInteractionFromResponse(currentVideo.id, response.interaction);
-      setActionMessage(currentInteraction?.favorited ? "已取消收藏" : "已收藏");
-    } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : "收藏失败");
-    } finally {
-      setPendingAction("");
+    if (!hasSession()) {
+      setActionMessage("请先登录后再收藏");
+      return;
     }
+    const nextFavorited = !currentInteraction?.favorited;
+    setInteractionState((previous) => {
+      const existing = previous[currentVideo.id] ?? buildQueuedInteractionState(currentVideo, syncQueueRef.current);
+      return {
+        ...previous,
+        [currentVideo.id]: {
+          ...existing,
+          favorited: nextFavorited,
+          favoritesCount: Math.max(0, existing.favoritesCount + (nextFavorited ? 1 : -1)),
+        },
+      };
+    });
+    setSyncQueue((previous) => enqueueFavoriteAction(previous, currentVideo.id, nextFavorited));
   };
 
   const handleShare = async (event: MouseEvent<HTMLButtonElement>) => {
@@ -530,32 +645,39 @@ export function VideoFeed() {
     if (!currentVideo || !commentDraft.trim() || commentSubmitting) {
       return;
     }
-    try {
-      setCommentSubmitting(true);
-      const created = await createContentComment(currentVideo.id, {
-        content: commentDraft.trim(),
-        parent_id: replyTarget?.id ?? null,
-      });
-      setComments((previous) => [created, ...previous]);
-      setInteractionState((previous) => {
-        const existing = previous[currentVideo.id] ?? buildInitialInteractionState(currentVideo);
-        return {
-          ...previous,
-          [currentVideo.id]: {
-            ...existing,
-            commentsCount: existing.commentsCount + 1,
-          },
-        };
-      });
-      setCommentDraft("");
-      setReplyTarget(null);
-      setCommentError("");
-      setActionMessage("评论已发布");
-    } catch (error) {
-      setCommentError(error instanceof Error ? error.message : "评论发布失败");
-    } finally {
-      setCommentSubmitting(false);
+    if (!hasSession() || currentUserId === null) {
+      setCommentError("请先登录后再评论");
+      return;
     }
+    if ((replyTarget?.id ?? 0) < 0) {
+      return;
+    }
+
+    const trimmedComment = commentDraft.trim();
+    const pendingDraft = createPendingCommentDraft({
+      contentId: currentVideo.id,
+      content: trimmedComment,
+      parentId: replyTarget?.id ?? null,
+      displayName: currentUserDisplayName,
+      avatarUrl: currentUserAvatarUrl,
+      replyToDisplayName: replyTarget?.display_name ?? null,
+    });
+
+    setComments((previous) => [buildPendingCommentResponse(pendingDraft, currentUserId), ...previous]);
+    setInteractionState((previous) => {
+      const existing = previous[currentVideo.id] ?? buildQueuedInteractionState(currentVideo, syncQueueRef.current);
+      return {
+        ...previous,
+        [currentVideo.id]: {
+          ...existing,
+          commentsCount: existing.commentsCount + 1,
+        },
+      };
+    });
+    setSyncQueue((previous) => enqueueCommentAction(previous, pendingDraft));
+    setCommentDraft("");
+    setReplyTarget(null);
+    setCommentError("");
   };
 
   const toggleReplies = (rootId: number) => {

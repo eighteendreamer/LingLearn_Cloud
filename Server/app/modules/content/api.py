@@ -9,6 +9,7 @@ from app.core.response import success
 from app.modules.content.schemas import (
     ContentCommentCreateRequest,
     ContentCreateRequest,
+    ContentInteractionBatchSyncRequest,
     ContentShareRequest,
     ContentUpdateRequest,
     ContentWatchProgressRequest,
@@ -186,6 +187,21 @@ async def report_watch_progress(
     data = await service.report_watch_progress(
         session,
         content_id=content_id,
+        user_id=int(current_user.sub),
+        payload=payload,
+    )
+    return success(data=data.model_dump(mode="json"))
+
+
+@contents_router.post("/interactions/batch-sync")
+async def sync_content_interactions_batch(
+    payload: ContentInteractionBatchSyncRequest,
+    session: DBSession,
+    current_user: CurrentUser,
+):
+    service = ContentService()
+    data = await service.sync_interactions_batch(
+        session,
         user_id=int(current_user.sub),
         payload=payload,
     )
