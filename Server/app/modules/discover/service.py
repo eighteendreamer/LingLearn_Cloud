@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from app.modules.content.repository import ContentRepository
-from app.modules.content.schemas import ContentCategoryResponse
+from app.modules.discover.schemas import (
+    DiscoverCategoryResponse,
+    DiscoverHotTagResponse,
+    DiscoverHotTopicResponse,
+)
 
 DEFAULT_CATEGORIES: tuple[dict[str, str | int | None], ...] = (
     {"name": "编程", "slug": "programming", "description": "编程开发相关内容", "icon": "code", "sort_order": 10},
@@ -17,7 +21,7 @@ class DiscoverService:
     def __init__(self, *, content_repository: ContentRepository | None = None) -> None:
         self.content_repository = content_repository or ContentRepository()
 
-    async def list_categories(self, session) -> list[ContentCategoryResponse]:
+    async def list_categories(self, session) -> list[DiscoverCategoryResponse]:
         categories = await self.content_repository.list_active_categories(session)
         if not categories:
             for item in DEFAULT_CATEGORIES:
@@ -32,4 +36,32 @@ class DiscoverService:
             await session.commit()
             categories = await self.content_repository.list_active_categories(session)
 
-        return [ContentCategoryResponse(id=item.id, name=item.name) for item in categories]
+        return [DiscoverCategoryResponse(id=item.id, name=item.name) for item in categories]
+
+    async def list_hot_topics(self, session, *, limit: int = 6) -> list[DiscoverHotTopicResponse]:
+        rows = await self.content_repository.list_discover_hot_topic_rows(session, limit=limit)
+        return [
+            DiscoverHotTopicResponse(
+                id=int(row["id"]),
+                name=str(row["name"]),
+                content_count=int(row["content_count"] or 0),
+                views_count=int(row["views_count"] or 0),
+                likes_count=int(row["likes_count"] or 0),
+                trend_score=float(row["trend_score"] or 0),
+            )
+            for row in rows
+        ]
+
+    async def list_hot_tags(self, session, *, limit: int = 10) -> list[DiscoverHotTagResponse]:
+        rows = await self.content_repository.list_discover_hot_tag_rows(session, limit=limit)
+        return [
+            DiscoverHotTagResponse(
+                id=int(row["id"]),
+                name=str(row["name"]),
+                content_count=int(row["content_count"] or 0),
+                views_count=int(row["views_count"] or 0),
+                likes_count=int(row["likes_count"] or 0),
+                trend_score=float(row["trend_score"] or 0),
+            )
+            for row in rows
+        ]

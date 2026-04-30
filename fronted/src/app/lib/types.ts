@@ -109,6 +109,24 @@ export interface ContentCategoryResponse {
   name: string;
 }
 
+export interface DiscoverHotTopicResponse {
+  id: number;
+  name: string;
+  content_count: number;
+  views_count: number;
+  likes_count: number;
+  trend_score: number;
+}
+
+export interface DiscoverHotTagResponse {
+  id: number;
+  name: string;
+  content_count: number;
+  views_count: number;
+  likes_count: number;
+  trend_score: number;
+}
+
 export interface ContentInteractionResponse {
   views_count: number;
   likes_count: number;

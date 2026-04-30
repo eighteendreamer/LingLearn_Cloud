@@ -7,6 +7,8 @@ import type {
   ContentCategoryResponse,
   ContentCommentListResponse,
   ContentCreatePayload,
+  DiscoverHotTagResponse,
+  DiscoverHotTopicResponse,
   ContentInteractionMutationResponse,
   ContentSharePayload,
   ContentVideoResponse,
@@ -25,12 +27,27 @@ export async function fetchContentCategories() {
   return apiRequest<ContentCategoryResponse[]>("/discover/categories");
 }
 
-export async function fetchFeedVideos(cursor?: string | null, recommendType = "for_you") {
+export async function fetchDiscoverHotTopics() {
+  return apiRequest<DiscoverHotTopicResponse[]>("/discover/hot-topics", { auth: false });
+}
+
+export async function fetchDiscoverHotTags() {
+  return apiRequest<DiscoverHotTagResponse[]>("/discover/hot-tags", { auth: false });
+}
+
+export async function fetchFeedVideos(
+  cursor?: string | null,
+  recommendType = "for_you",
+  categoryId?: number | null,
+) {
   const search = new URLSearchParams();
   search.set("limit", "10");
   search.set("recommend_type", recommendType);
   if (cursor) {
     search.set("cursor", cursor);
+  }
+  if (categoryId) {
+    search.set("category_id", String(categoryId));
   }
   return apiRequest<FeedVideosResponse>(`/feed/videos?${search.toString()}`);
 }

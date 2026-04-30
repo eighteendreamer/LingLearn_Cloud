@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from datetime import date, datetime
 
-from sqlalchemy import Select, and_, exists, func, literal, or_, select, update
+from sqlalchemy import Select, and_, exists, func, literal, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -35,6 +35,83 @@ class ContentRepository:
             .order_by(ContentCategory.sort_order.asc(), ContentCategory.id.asc())
         )
         return list((await session.scalars(stmt)).all())
+
+    async def list_discover_hot_topic_rows(
+        self,
+        session: AsyncSession,
+        *,
+        limit: int,
+    ) -> list[dict]:
+        trend_score_expr = (
+            (ContentItem.views_count * 0.05)
+            + ContentItem.likes_count
+            + (ContentItem.comments_count * 1.8)
+            + (ContentItem.favorites_count * 1.5)
+            + (ContentItem.shares_count * 1.2)
+        )
+        stmt = (
+            select(
+                ContentCategory.id.label("id"),
+                ContentCategory.name.label("name"),
+                func.count(ContentItem.id).label("content_count"),
+                func.coalesce(func.sum(ContentItem.views_count), 0).label("views_count"),
+                func.coalesce(func.sum(ContentItem.likes_count), 0).label("likes_count"),
+                func.coalesce(func.sum(trend_score_expr), 0).label("trend_score"),
+            )
+            .select_from(ContentCategory)
+            .join(ContentItem, ContentItem.category_id == ContentCategory.id)
+            .where(
+                ContentCategory.status == "active",
+                *self._public_content_conditions(),
+            )
+            .group_by(ContentCategory.id, ContentCategory.name)
+            .order_by(
+                literal_column("trend_score").desc(),
+                literal_column("content_count").desc(),
+                ContentCategory.id.asc(),
+            )
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).mappings().all())
+
+    async def list_discover_hot_tag_rows(
+        self,
+        session: AsyncSession,
+        *,
+        limit: int,
+    ) -> list[dict]:
+        trend_score_expr = (
+            (ContentItem.views_count * 0.05)
+            + ContentItem.likes_count
+            + (ContentItem.comments_count * 1.8)
+            + (ContentItem.favorites_count * 1.5)
+            + (ContentItem.shares_count * 1.2)
+        )
+        stmt = (
+            select(
+                Tag.id.label("id"),
+                Tag.name.label("name"),
+                func.count(func.distinct(ContentItem.id)).label("content_count"),
+                func.coalesce(func.sum(ContentItem.views_count), 0).label("views_count"),
+                func.coalesce(func.sum(ContentItem.likes_count), 0).label("likes_count"),
+                func.coalesce(func.sum(trend_score_expr), 0).label("trend_score"),
+            )
+            .select_from(Tag)
+            .join(ContentItemTag, ContentItemTag.tag_id == Tag.id)
+            .join(ContentItem, ContentItem.id == ContentItemTag.content_item_id)
+            .where(
+                Tag.status == "active",
+                *self._public_content_conditions(),
+            )
+            .group_by(Tag.id, Tag.name)
+            .order_by(
+                literal_column("trend_score").desc(),
+                literal_column("content_count").desc(),
+                Tag.id.asc(),
+            )
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).mappings().all())
 
     async def create_category(
         self,

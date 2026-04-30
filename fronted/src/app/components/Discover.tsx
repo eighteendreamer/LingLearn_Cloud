@@ -1,251 +1,375 @@
-import { Search, TrendingUp, Hash, Play } from "lucide-react";
-import { useState } from "react";
+import { Hash, Play, Search, TrendingUp } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import {
+  fetchContentCategories,
+  fetchDiscoverHotTags,
+  fetchDiscoverHotTopics,
+  fetchFeedVideos,
+} from "../lib/content";
+import type {
+  ContentCategoryResponse,
+  ContentVideoResponse,
+  DiscoverHotTagResponse,
+  DiscoverHotTopicResponse,
+} from "../lib/types";
+
+const categoryDecor = [
+  { icon: "🐍", color: "from-blue-500 to-cyan-500" },
+  { icon: "💻", color: "from-purple-500 to-pink-500" },
+  { icon: "🧮", color: "from-emerald-500 to-teal-500" },
+  { icon: "🗄️", color: "from-orange-500 to-red-500" },
+  { icon: "🤖", color: "from-indigo-500 to-purple-500" },
+  { icon: "⚙️", color: "from-green-500 to-emerald-500" },
+] as const;
+
+type RankingItem = {
+  id: number;
+  rank: number;
+  title: string;
+  views: string;
+  trend: "热" | "新" | "";
+};
+
+function formatCompactCount(value: number) {
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(1).replace(/\.0$/, "")}万`;
+  }
+  return String(value);
+}
+
+function formatDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) {
+    return "00:00";
+  }
+
+  const whole = Math.round(seconds);
+  const minutes = Math.floor(whole / 60);
+  const remain = whole % 60;
+  const minuteText = String(minutes).padStart(2, "0");
+  const secondText = String(remain).padStart(2, "0");
+  return `${minuteText}:${secondText}`;
+}
+
+function deriveCategoryVideoCount(
+  category: ContentCategoryResponse,
+  hotTopics: DiscoverHotTopicResponse[],
+  videos: ContentVideoResponse[],
+) {
+  const topic = hotTopics.find((item) => item.id === category.id);
+  if (topic) {
+    return topic.content_count;
+  }
+  return videos.filter((video) => video.category?.id === category.id).length;
+}
 
 export function Discover() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
-  const categories = [
-    { id: "1", name: "Python", icon: "🐍", count: "2.3k", color: "from-blue-500 to-cyan-500" },
-    { id: "2", name: "前端开发", icon: "💻", count: "3.8k", color: "from-purple-500 to-pink-500" },
-    { id: "3", name: "算法", icon: "🧮", count: "1.9k", color: "from-emerald-500 to-teal-500" },
-    { id: "4", name: "数据库", icon: "🗄️", count: "1.2k", color: "from-orange-500 to-red-500" },
-    { id: "5", name: "AI/ML", icon: "🤖", count: "2.7k", color: "from-indigo-500 to-purple-500" },
-    { id: "6", name: "后端", icon: "⚙️", count: "2.1k", color: "from-green-500 to-emerald-500" },
-  ];
+  const [categories, setCategories] = useState<ContentCategoryResponse[]>([]);
+  const [hotTopics, setHotTopics] = useState<DiscoverHotTopicResponse[]>([]);
+  const [hotTags, setHotTags] = useState<DiscoverHotTagResponse[]>([]);
+  const [recommendedVideos, setRecommendedVideos] = useState<ContentVideoResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorText, setErrorText] = useState<string | null>(null);
 
-  const trending = [
-    {
-      id: "1",
-      rank: 1,
-      title: "ChatGPT提示词工程完整教程",
-      views: "128万",
-      trend: "热",
-    },
-    {
-      id: "2",
-      rank: 2,
-      title: "Next.js 14 新特性详解",
-      views: "95万",
-      trend: "新",
-    },
-    {
-      id: "3",
-      rank: 3,
-      title: "TypeScript高级类型系统",
-      views: "87万",
-      trend: "热",
-    },
-    {
-      id: "4",
-      rank: 4,
-      title: "Docker容器化最佳实践",
-      views: "76万",
-      trend: "",
-    },
-    {
-      id: "5",
-      rank: 5,
-      title: "LeetCode算法题解析",
-      views: "68万",
-      trend: "",
-    },
-  ];
+  useEffect(() => {
+    let active = true;
 
-  const popularHashtags = [
-    { tag: "编程入门", count: "582万" },
-    { tag: "前端面试", count: "421万" },
-    { tag: "算法刷题", count: "368万" },
-    { tag: "项目实战", count: "295万" },
-    { tag: "代码优化", count: "247万" },
-    { tag: "职场技能", count: "189万" },
-  ];
+    async function loadDiscover() {
+      try {
+        setLoading(true);
+        const [categoryData, topicData, tagData, feedData] = await Promise.all([
+          fetchContentCategories(),
+          fetchDiscoverHotTopics(),
+          fetchDiscoverHotTags(),
+          fetchFeedVideos(undefined, "hot", selectedCategoryId),
+        ]);
 
-  const recommendedVideos = [
-    {
-      id: "1",
-      title: "React性能优化实战指南",
-      author: "前端架构师",
-      thumbnail: "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=300",
-      views: "23.5万",
-      duration: "15:24",
-    },
-    {
-      id: "2",
-      title: "Python爬虫从零到精通",
-      author: "数据分析师",
-      thumbnail: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=300",
-      views: "18.2万",
-      duration: "22:16",
-    },
-    {
-      id: "3",
-      title: "深入理解Vue3响应式原理",
-      author: "Vue专家",
-      thumbnail: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=300",
-      views: "31.7万",
-      duration: "18:45",
-    },
-    {
-      id: "4",
-      title: "MySQL数据库性能调优",
-      author: "DBA工程师",
-      thumbnail: "https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=300",
-      views: "15.8万",
-      duration: "20:33",
-    },
-  ];
+        if (!active) {
+          return;
+        }
+
+        setCategories(categoryData.slice(0, 6));
+        setHotTopics(topicData.slice(0, 5));
+        setHotTags(tagData.slice(0, 6));
+        setRecommendedVideos(feedData.list);
+        setErrorText(null);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setErrorText(error instanceof Error ? error.message : "发现页加载失败。");
+        setRecommendedVideos([]);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadDiscover();
+    return () => {
+      active = false;
+    };
+  }, [selectedCategoryId]);
+
+  const filteredVideos = useMemo(() => {
+    if (!deferredQuery) {
+      return recommendedVideos;
+    }
+
+    return recommendedVideos.filter((video) => {
+      const haystack = [
+        video.title,
+        video.summary || "",
+        video.author.display_name,
+        video.category?.name || "",
+        ...video.hashtags,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(deferredQuery);
+    });
+  }, [deferredQuery, recommendedVideos]);
+
+  const rankingItems: RankingItem[] = useMemo(
+    () =>
+      hotTopics.map((topic, index) => {
+        let trend: RankingItem["trend"] = "";
+        if (index === 0 || topic.trend_score >= 12) {
+          trend = "热";
+        } else if (index === 1) {
+          trend = "新";
+        }
+
+        return {
+          id: topic.id,
+          rank: index + 1,
+          title: `${topic.name}热门内容`,
+          views: `${formatCompactCount(topic.views_count)} 观看`,
+          trend,
+        };
+      }),
+    [hotTopics],
+  );
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
-      <div className="max-w-screen-xl mx-auto px-4 py-6">
-        {/* 搜索框 */}
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-24">
+      <div className="mx-auto max-w-screen-xl px-4 py-6">
         <div className="mb-6">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="搜索课程、话题、老师..."
-              className="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all shadow-sm"
+              className="w-full rounded-2xl border border-gray-200 bg-white py-3.5 pl-12 pr-4 text-gray-900 placeholder-gray-500 shadow-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
         </div>
 
-        {/* 热门分类 */}
+        {errorText ? (
+          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {errorText}
+          </div>
+        ) : null}
+
         <div className="mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
             <span className="text-xl">🔥</span>
             热门分类
           </h2>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {categories.map((category) => (
-              <div
-                key={category.id}
-                className={`bg-gradient-to-br ${category.color} rounded-2xl p-4 cursor-pointer hover:scale-105 hover:shadow-lg transition-all`}
-              >
-                <div className="text-3xl mb-2">{category.icon}</div>
-                <div className="text-white font-semibold text-sm mb-1">{category.name}</div>
-                <div className="text-white/80 text-xs">{category.count} 视频</div>
-              </div>
-            ))}
-          </div>
-        </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {loading
+              ? [0, 1, 2, 3, 4, 5].map((index) => (
+                  <div key={index} className="h-[140px] animate-pulse rounded-2xl bg-white shadow-md" />
+                ))
+              : categories.map((category, index) => {
+                  const decor = categoryDecor[index % categoryDecor.length];
+                  const isActive = selectedCategoryId === category.id;
+                  const count = deriveCategoryVideoCount(category, hotTopics, recommendedVideos);
 
-        {/* 热榜和热门话题 */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* 实时热榜 */}
-          <div className="lg:col-span-2">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-6 h-6 text-emerald-500" />
-              实时热榜
-            </h2>
-            <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
-              <div className="space-y-4">
-                {trending.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-4 hover:bg-gray-50 p-3 rounded-xl transition-colors cursor-pointer group"
-                  >
-                    <div
-                      className={`w-10 h-10 flex items-center justify-center rounded-xl font-bold shadow ${
-                        item.rank <= 3
-                          ? "bg-gradient-to-br from-yellow-400 to-orange-500 text-white"
-                          : "bg-gray-200 text-gray-600"
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCategoryId((current) => (current === category.id ? null : category.id))
+                      }
+                      className={`h-[140px] rounded-2xl bg-gradient-to-br ${decor.color} p-3.5 text-left text-white shadow-md transition-all hover:scale-[1.02] hover:shadow-lg ${
+                        isActive ? "ring-4 ring-white/70" : ""
                       }`}
                     >
-                      {item.rank}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-gray-900 font-medium group-hover:text-emerald-600 transition-colors line-clamp-1">
-                          {item.title}
-                        </h3>
-                        {item.trend && (
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-bold ${
-                              item.trend === "热"
-                                ? "bg-gradient-to-r from-red-500 to-pink-500 text-white"
-                                : "bg-gradient-to-r from-emerald-500 to-teal-500 text-white"
-                            }`}
-                          >
-                            {item.trend}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-gray-600 text-sm mt-1">{item.views} 观看</p>
-                    </div>
-                  </div>
-                ))}
+                      <div className="mb-2 text-2xl">{decor.icon}</div>
+                      <div className="text-[1.75rem] font-semibold leading-none">{category.name}</div>
+                      <div className="mt-2 text-base text-white/90">{formatCompactCount(count)} 视频</div>
+                    </button>
+                  );
+                })}
+          </div>
+        </div>
+
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
+              <TrendingUp className="h-6 w-6 text-emerald-500" />
+              实时热榜
+            </h2>
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-md">
+              <div className="space-y-4">
+                {loading
+                  ? [0, 1, 2, 3, 4].map((index) => (
+                      <div key={index} className="h-16 animate-pulse rounded-xl bg-gray-100" />
+                    ))
+                  : rankingItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedCategoryId(item.id)}
+                        className="group flex w-full items-center gap-4 rounded-xl p-3 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <div
+                          className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold shadow ${
+                            item.rank <= 3
+                              ? "bg-gradient-to-br from-yellow-400 to-orange-500 text-white"
+                              : "bg-gray-200 text-gray-600"
+                          }`}
+                        >
+                          {item.rank}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="line-clamp-1 font-medium text-gray-900 transition-colors group-hover:text-emerald-600">
+                              {item.title}
+                            </h3>
+                            {item.trend ? (
+                              <span
+                                className={`rounded px-2 py-1 text-xs font-bold text-white ${
+                                  item.trend === "热"
+                                    ? "bg-gradient-to-r from-red-500 to-pink-500"
+                                    : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                                }`}
+                              >
+                                {item.trend}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-sm text-gray-600">{item.views}</p>
+                        </div>
+                      </button>
+                    ))}
               </div>
             </div>
           </div>
 
-          {/* 热门话题 */}
           <div>
-            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Hash className="w-6 h-6 text-emerald-500" />
+            <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
+              <Hash className="h-6 w-6 text-emerald-500" />
               热门话题
             </h2>
-            <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-md">
               <div className="space-y-3">
-                {popularHashtags.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between hover:bg-gray-50 p-3 rounded-xl transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Hash className="w-4 h-4 text-emerald-500" />
-                      <span className="text-gray-900 font-medium group-hover:text-emerald-600 transition-colors">
-                        {item.tag}
-                      </span>
-                    </div>
-                    <span className="text-gray-600 text-sm">{item.count}</span>
-                  </div>
-                ))}
+                {loading
+                  ? [0, 1, 2, 3, 4, 5].map((index) => (
+                      <div key={index} className="h-12 animate-pulse rounded-xl bg-gray-100" />
+                    ))
+                  : hotTags.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSearchQuery(item.name)}
+                        className="group flex w-full items-center justify-between rounded-xl p-3 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Hash className="h-4 w-4 text-emerald-500" />
+                          <span className="font-medium text-gray-900 transition-colors group-hover:text-emerald-600">
+                            {item.name}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-600">{formatCompactCount(item.views_count)}</span>
+                      </button>
+                    ))}
               </div>
             </div>
           </div>
         </div>
 
-        {/* 推荐视频 */}
         <div>
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
             <span className="text-xl">✨</span>
             推荐视频
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {recommendedVideos.map((video) => (
-              <div
-                key={video.id}
-                className="bg-white rounded-2xl overflow-hidden border border-gray-200 hover:border-emerald-500 hover:shadow-lg transition-all cursor-pointer group"
-              >
-                <div className="relative aspect-video bg-gray-200 overflow-hidden">
-                  <img
-                    src={video.thumbnail}
-                    alt={video.title}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
-                  <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 rounded text-white text-xs">
-                    {video.duration}
+          {loading ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[0, 1, 2, 3].map((index) => (
+                <div key={index} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md">
+                  <div className="aspect-video animate-pulse bg-gray-100" />
+                  <div className="space-y-3 p-4">
+                    <div className="h-6 animate-pulse rounded bg-gray-100" />
+                    <div className="h-4 w-2/3 animate-pulse rounded bg-gray-100" />
+                    <div className="h-4 w-1/2 animate-pulse rounded bg-gray-100" />
                   </div>
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg">
-                      <Play className="w-6 h-6 text-white ml-1" />
+                </div>
+              ))}
+            </div>
+          ) : filteredVideos.length ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {filteredVideos.slice(0, 8).map((video) => (
+                <a
+                  key={video.id}
+                  href={video.video_url || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md transition-all hover:border-emerald-500 hover:shadow-lg"
+                >
+                  <div className="relative aspect-video overflow-hidden bg-gray-200">
+                    {video.cover_url ? (
+                      <img
+                        src={video.cover_url}
+                        alt={video.title}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    ) : (
+                      <video
+                        src={video.video_url || undefined}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                    <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white">
+                      {formatDuration(video.duration_seconds)}
+                    </div>
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 shadow-lg">
+                        <Play className="ml-1 h-6 w-6 text-white" />
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="text-gray-900 font-semibold text-sm mb-2 line-clamp-2 group-hover:text-emerald-600 transition-colors">
-                    {video.title}
-                  </h3>
-                  <p className="text-gray-600 text-xs mb-1">{video.author}</p>
-                  <p className="text-gray-500 text-xs">{video.views} 观看</p>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <div className="p-4">
+                    <h3 className="mb-2 line-clamp-2 text-sm font-semibold text-gray-900 transition-colors group-hover:text-emerald-600">
+                      {video.title}
+                    </h3>
+                    <p className="mb-1 text-xs text-gray-600">{video.author.display_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatCompactCount(video.interaction.views_count)} 观看
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-16 text-center text-gray-500 shadow-sm">
+              暂时没有匹配的视频内容。
+            </div>
+          )}
         </div>
       </div>
     </div>

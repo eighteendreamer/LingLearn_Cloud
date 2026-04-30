@@ -185,7 +185,7 @@ class ContentService:
         query: FeedQueryParams,
     ) -> FeedVideosResponse:
         normalized_type = query.recommend_type.strip().lower()
-        if normalized_type not in {"for_you", "following"}:
+        if normalized_type not in {"for_you", "following", "hot"}:
             raise BadRequestError(message="Unsupported recommend_type.")
 
         cursor = self._parse_cursor(query.cursor)
