@@ -28,6 +28,36 @@ class ContentRepository:
     async def get_category_by_id(self, session: AsyncSession, category_id: int) -> ContentCategory | None:
         return await session.get(ContentCategory, category_id)
 
+    async def list_active_categories(self, session: AsyncSession) -> list[ContentCategory]:
+        stmt = (
+            select(ContentCategory)
+            .where(ContentCategory.status == "active")
+            .order_by(ContentCategory.sort_order.asc(), ContentCategory.id.asc())
+        )
+        return list((await session.scalars(stmt)).all())
+
+    async def create_category(
+        self,
+        session: AsyncSession,
+        *,
+        name: str,
+        slug: str,
+        description: str | None = None,
+        icon: str | None = None,
+        sort_order: int = 0,
+    ) -> ContentCategory:
+        entity = ContentCategory(
+            name=name,
+            slug=slug,
+            description=description,
+            icon=icon,
+            sort_order=sort_order,
+            status="active",
+        )
+        session.add(entity)
+        await session.flush()
+        return entity
+
     async def get_media_assets_by_ids(
         self,
         session: AsyncSession,
@@ -465,6 +495,74 @@ class ContentRepository:
 
         stmt = stmt.limit(limit)
         return list((await session.execute(stmt)).mappings().all())
+
+    async def list_recommendation_candidate_rows(
+        self,
+        session: AsyncSession,
+        *,
+        viewer_user_id: int | None,
+        limit: int,
+        category_ids: Sequence[int] | None = None,
+        tag_ids: Sequence[int] | None = None,
+        author_ids: Sequence[int] | None = None,
+        exclude_content_ids: Sequence[int] | None = None,
+        published_before: datetime | None = None,
+        order_by: str = "hot",
+    ) -> list[dict]:
+        stmt = self._build_content_row_stmt(viewer_user_id=viewer_user_id).where(
+            *self._public_content_conditions()
+        )
+
+        if category_ids:
+            stmt = stmt.where(ContentItem.category_id.in_(category_ids))
+        if author_ids:
+            stmt = stmt.where(ContentItem.author_id.in_(author_ids))
+        if exclude_content_ids:
+            stmt = stmt.where(ContentItem.id.not_in(list(exclude_content_ids)))
+        if published_before is not None:
+            stmt = stmt.where(ContentItem.published_at < published_before)
+        if tag_ids:
+            stmt = stmt.join(ContentItemTag, ContentItemTag.content_item_id == ContentItem.id).where(
+                ContentItemTag.tag_id.in_(tag_ids)
+            )
+
+        if order_by == "recent":
+            stmt = stmt.order_by(ContentItem.published_at.desc(), ContentItem.id.desc())
+        else:
+            stmt = stmt.order_by(ContentItem.hot_score.desc(), ContentItem.published_at.desc(), ContentItem.id.desc())
+
+        stmt = stmt.limit(limit)
+        rows = list((await session.execute(stmt)).mappings().all())
+        deduped: dict[int, dict] = {}
+        for row in rows:
+            deduped.setdefault(int(row["id"]), row)
+        return list(deduped.values())
+
+    async def get_content_rows_by_ids(
+        self,
+        session: AsyncSession,
+        *,
+        viewer_user_id: int | None,
+        content_ids: Sequence[int],
+    ) -> list[dict]:
+        if not content_ids:
+            return []
+        stmt = self._build_content_row_stmt(viewer_user_id=viewer_user_id).where(
+            *self._public_content_conditions(),
+            ContentItem.id.in_(list(content_ids)),
+        )
+        rows = list((await session.execute(stmt)).mappings().all())
+        row_map = {int(row["id"]): row for row in rows}
+        return [row_map[content_id] for content_id in content_ids if content_id in row_map]
+
+    async def get_content_tag_ids(
+        self,
+        session: AsyncSession,
+        *,
+        content_item_id: int,
+    ) -> list[int]:
+        stmt = select(ContentItemTag.tag_id).where(ContentItemTag.content_item_id == content_item_id)
+        return [int(value) for value in (await session.scalars(stmt)).all()]
 
     async def list_author_works_rows(
         self,

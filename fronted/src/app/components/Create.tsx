@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Image, Upload, Video } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import { ApiError } from "../lib/api";
-import { createContent } from "../lib/content";
+import { createContent, fetchContentCategories } from "../lib/content";
 import { uploadFileToStorage, uploadMultipartFileToStorage } from "../lib/storage";
-
-const categories = ["编程", "算法", "前端", "后端", "数据库", "AI/ML"];
+import type { ContentCategoryResponse } from "../lib/types";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -24,18 +23,56 @@ export function Create() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("编程");
+  const [categories, setCategories] = useState<ContentCategoryResponse[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [videoProgress, setVideoProgress] = useState(0);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCategories() {
+      setIsLoadingCategories(true);
+      try {
+        const data = await fetchContentCategories();
+        if (cancelled) {
+          return;
+        }
+        setCategories(data);
+        setSelectedCategoryId((current) => current ?? data[0]?.id ?? null);
+      } catch (error) {
+        if (!cancelled) {
+          setSubmitMessage(getErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingCategories(false);
+        }
+      }
+    }
+
+    loadCategories();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedCategory = categories.find((item) => item.id === selectedCategoryId) ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!title.trim()) {
       setSubmitMessage("请输入作品标题。");
+      return;
+    }
+
+    if (!selectedCategoryId || !selectedCategory) {
+      setSubmitMessage("请选择一个有效的分类标签。");
       return;
     }
 
@@ -68,10 +105,11 @@ export function Create() {
       await createContent({
         title: title.trim(),
         summary: description.trim() || null,
+        category_id: selectedCategoryId,
         cover_asset_id: coverAsset.asset_id,
         primary_media_asset_id: videoAsset.asset_id,
         content_type: "short_video",
-        hashtags: [category],
+        hashtags: [selectedCategory.name],
       });
 
       setSubmitMessage("作品发布成功，正在返回首页...");
@@ -146,18 +184,24 @@ export function Create() {
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">分类标签</label>
             <div className="flex flex-wrap gap-2">
+              {isLoadingCategories ? (
+                <span className="text-sm text-gray-500">正在加载分类...</span>
+              ) : null}
+              {!isLoadingCategories && categories.length === 0 ? (
+                <span className="text-sm text-red-500">暂无可用分类，请检查分类初始化。</span>
+              ) : null}
               {categories.map((item) => (
                 <button
-                  key={item}
+                  key={item.id}
                   type="button"
-                  onClick={() => setCategory(item)}
+                  onClick={() => setSelectedCategoryId(item.id)}
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                    category === item
+                    selectedCategoryId === item.id
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  {item}
+                  {item.name}
                 </button>
               ))}
             </div>
@@ -202,7 +246,7 @@ export function Create() {
                   <>
                     <Upload className="mx-auto mb-3 h-10 w-10 text-gray-400" />
                     <p className="mb-1 font-medium text-gray-600">点击或拖拽上传视频</p>
-                    <p className="text-sm text-gray-400">支持 MP4、MOV、WEBM，按分片上传，最大 500MB</p>
+                    <p className="text-sm text-gray-400">支持 MP4、MOV、WEBM，按片上传，最大 500MB</p>
                   </>
                 )}
               </label>
@@ -256,7 +300,7 @@ export function Create() {
             </Link>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingCategories || categories.length === 0}
               className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 font-semibold text-white shadow-lg transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? "处理中..." : "发布作品"}

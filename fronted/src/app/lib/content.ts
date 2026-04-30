@@ -2,6 +2,7 @@ import { apiRequest } from "./api";
 import type {
   ContentCommentResponse,
   ContentCommentCreatePayload,
+  ContentCategoryResponse,
   ContentCommentListResponse,
   ContentCreatePayload,
   ContentInteractionMutationResponse,
@@ -16,6 +17,10 @@ export async function createContent(payload: ContentCreatePayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchContentCategories() {
+  return apiRequest<ContentCategoryResponse[]>("/discover/categories");
 }
 
 export async function fetchFeedVideos(cursor?: string | null, recommendType = "for_you") {

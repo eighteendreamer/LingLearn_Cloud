@@ -27,6 +27,7 @@ from app.modules.content.schemas import (
     FeedQueryParams,
     FeedVideosResponse,
 )
+from app.modules.recommendation.service import RecommendationService
 from app.modules.user.schemas import UserWorkListItemResponse
 
 
@@ -37,10 +38,14 @@ class ContentService:
         repository: ContentRepository | None = None,
         storage_service: StorageService | None = None,
         cache_client: RedisCacheClient | None = None,
+        recommendation_service: RecommendationService | None = None,
     ) -> None:
         self.repository = repository or ContentRepository()
         self.storage_service = storage_service or StorageService()
         self.cache_client = cache_client or redis_cache_client
+        self.recommendation_service = recommendation_service or RecommendationService(
+            content_repository=self.repository,
+        )
 
     async def create_content(
         self,
@@ -178,14 +183,23 @@ class ContentService:
             raise BadRequestError(message="Unsupported recommend_type.")
 
         cursor = self._parse_cursor(query.cursor)
-        rows = await self.repository.list_feed_rows(
-            session,
-            viewer_user_id=viewer_user_id,
-            limit=query.limit + 1,
-            category_id=query.category_id,
-            recommend_type=normalized_type,
-            cursor=cursor,
-        )
+        if normalized_type == "for_you":
+            rows, _session_id = await self.recommendation_service.list_for_you_rows(
+                session,
+                viewer_user_id=viewer_user_id,
+                limit=query.limit + 1,
+                category_id=query.category_id,
+                cursor=cursor,
+            )
+        else:
+            rows = await self.repository.list_feed_rows(
+                session,
+                viewer_user_id=viewer_user_id,
+                limit=query.limit + 1,
+                category_id=query.category_id,
+                recommend_type=normalized_type,
+                cursor=cursor,
+            )
         has_more = len(rows) > query.limit
         trimmed = rows[: query.limit]
         items = [await self._build_content_video_response(row) for row in trimmed]
@@ -256,6 +270,19 @@ class ContentService:
                     author_user_id=item.author_id,
                     delta=1,
                 )
+                await self.recommendation_service.record_behavior(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    event_type="like",
+                )
+                await self.recommendation_service.update_impression_feedback(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    liked=True,
+                    clicked_at=utc_now_naive(),
+                )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 
     async def unlike_content(
@@ -285,6 +312,18 @@ class ContentService:
                     author_user_id=item.author_id,
                     delta=-1,
                 )
+                await self.recommendation_service.record_behavior(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    event_type="unlike",
+                )
+                await self.recommendation_service.update_impression_feedback(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    liked=False,
+                )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 
     async def favorite_content(
@@ -313,6 +352,19 @@ class ContentService:
                     favorites_delta=1,
                     hot_score_delta=1.5,
                 )
+                await self.recommendation_service.record_behavior(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    event_type="favorite",
+                )
+                await self.recommendation_service.update_impression_feedback(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    favorited=True,
+                    clicked_at=utc_now_naive(),
+                )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 
     async def unfavorite_content(
@@ -337,6 +389,18 @@ class ContentService:
                     favorites_delta=-1,
                     hot_score_delta=-1.5,
                 )
+                await self.recommendation_service.record_behavior(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    event_type="unfavorite",
+                )
+                await self.recommendation_service.update_impression_feedback(
+                    session,
+                    user_id=user_id,
+                    content_id=content_id,
+                    favorited=False,
+                )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 
     async def share_content(
@@ -360,6 +424,19 @@ class ContentService:
                 content_id=content_id,
                 shares_delta=1,
                 hot_score_delta=1.2,
+            )
+            await self.recommendation_service.record_behavior(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                event_type="share",
+            )
+            await self.recommendation_service.update_impression_feedback(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                shared=True,
+                clicked_at=utc_now_naive(),
             )
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 
@@ -440,6 +517,19 @@ class ContentService:
                 content_id=content_id,
                 comments_delta=1,
                 hot_score_delta=1.8,
+            )
+            await self.recommendation_service.record_behavior(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                event_type="comment",
+            )
+            await self.recommendation_service.update_impression_feedback(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                commented=True,
+                clicked_at=utc_now_naive(),
             )
 
         await self._invalidate_comment_caches(content_id)
@@ -524,6 +614,24 @@ class ContentService:
                     "last_viewed_at": now,
                 }
                 await self.repository.update_view_history(session, history_id=history.id, values=update_values)
+            await self.recommendation_service.record_behavior(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                event_type="watch",
+                watch_seconds=watch_seconds,
+                watch_progress=watch_progress,
+                completed=reported_completed,
+            )
+            await self.recommendation_service.update_impression_feedback(
+                session,
+                user_id=user_id,
+                content_id=content_id,
+                watch_seconds=watch_seconds,
+                watch_progress=watch_progress,
+                completed=reported_completed,
+                clicked_at=now,
+            )
 
         return await self._build_interaction_mutation_response(session, content_id=content_id, user_id=user_id)
 

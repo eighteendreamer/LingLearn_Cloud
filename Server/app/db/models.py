@@ -11,6 +11,12 @@ from app.modules.content.models import (
     ContentViewHistory,
     Tag,
 )
+from app.modules.recommendation.models import (
+    ContentRecommendationImpression,
+    UserAuthorInterestProfile,
+    UserCategoryInterestProfile,
+    UserTagInterestProfile,
+)
 from app.modules.storage.models import MediaAsset
 from app.modules.user.models import UserFollowRelation, UserProfile, UserSettings
 
@@ -28,6 +34,10 @@ __all__ = [
     "ContentComment",
     "ContentShare",
     "ContentViewHistory",
+    "UserCategoryInterestProfile",
+    "UserTagInterestProfile",
+    "UserAuthorInterestProfile",
+    "ContentRecommendationImpression",
     "UserProfile",
     "UserSettings",
     "UserFollowRelation",
