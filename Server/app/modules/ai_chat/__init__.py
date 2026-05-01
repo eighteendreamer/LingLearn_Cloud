@@ -1,1 +1,1 @@
-"""AI chat module."""
+# AI Chat module

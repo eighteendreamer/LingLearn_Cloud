@@ -9,25 +9,28 @@ import {
 } from "lucide-react";
 
 import { ApiError, apiRequest } from "../lib/api";
+import { streamAIChatMessage } from "../lib/ai-chat";
+import { MarkdownMessage } from "./MarkdownMessage";
+import type {
+  AIChatSessionResponse,
+  AIChatMessageResponse,
+  AIChatSessionCreatePayload,
+} from "../lib/types";
 
 interface Message {
-  id: string;
+  id: number;
   content: string;
-  isUser: boolean;
-}
-
-interface AIChatCompletionResponse {
-  reply: string;
-  model: string;
+  role: string;
 }
 
 export function FloatingAIChat() {
   const [isOpen, setIsOpen] = useState(false);
+  const [currentSession, setCurrentSession] = useState<AIChatSessionResponse | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: "1",
+      id: 0,
       content: "你好，我是你的 AI 学习助手。你可以直接问我编程、学习路径或算法问题。",
-      isUser: false,
+      role: "assistant",
     },
   ]);
   const [input, setInput] = useState("");
@@ -46,51 +49,116 @@ export function FloatingAIChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleAsk = async (userInput: string) => {
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      content: userInput,
-      isUser: true,
-    };
-    const nextMessages = [...messages, userMessage];
-    const replyId = `assistant-${Date.now()}`;
+  useEffect(() => {
+    if (isOpen && !currentSession) {
+      initSession();
+    }
+  }, [isOpen]);
 
-    setMessages([...nextMessages, { id: replyId, content: "", isUser: false }]);
+  const initSession = async () => {
+    try {
+      // 尝试获取现有会话
+      const sessions = await apiRequest<AIChatSessionResponse[]>("/ai/chat/sessions");
+      
+      if (sessions.length > 0) {
+        // 使用第一个会话
+        setCurrentSession(sessions[0]);
+        // 加载历史消息
+        const messagesData = await apiRequest<AIChatMessageResponse[]>(
+          `/ai/chat/sessions/${sessions[0].id}/messages`
+        );
+        if (messagesData.length > 0) {
+          const formattedMessages: Message[] = messagesData.map((msg) => ({
+            id: msg.id,
+            content: msg.content,
+            role: msg.role,
+          }));
+          setMessages(formattedMessages);
+        }
+      } else {
+        // 创建新会话
+        const payload: AIChatSessionCreatePayload = {
+          session_name: "浮动助手对话",
+          scene_code: "study_assistant",
+          model_name: "glm-4-flash",
+        };
+        const session = await apiRequest<AIChatSessionResponse>("/ai/chat/sessions", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setCurrentSession(session);
+      }
+    } catch (err) {
+      console.error("Failed to init session:", err);
+      setError("无法初始化对话会话");
+    }
+  };
+
+  const handleAsk = async (userInput: string) => {
+    if (!currentSession) {
+      setError("会话未初始化，请刷新页面重试");
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now(),
+      content: userInput,
+      role: "user",
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsTyping(true);
     setError("");
+    const assistantMessageId = Date.now() + 1;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantMessageId,
+        content: "",
+        role: "assistant",
+      },
+    ]);
 
     try {
-      const history = nextMessages
-        .slice(-12)
-        .map((message) => ({
-          role: message.isUser ? "user" : "assistant",
-          content: message.content,
-        }));
-
-      const data = await apiRequest<AIChatCompletionResponse>("/ai-chat/completions", {
-        method: "POST",
-        auth: false,
-        body: JSON.stringify({ messages: history }),
+      await streamAIChatMessage(currentSession.id, {
+        content: userInput,
+        stream: true,
+      }, {
+        onDelta: (content) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, content: message.content + content }
+                : message
+            )
+          );
+        },
+        onDone: (message) => {
+          if (!message) {
+            return;
+          }
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantMessageId
+                ? { id: message.id, content: message.content, role: message.role }
+                : item
+            )
+          );
+        },
       });
-
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.id === replyId ? { ...message, content: data.reply } : message,
-        ),
-      );
     } catch (requestError) {
       const message =
         requestError instanceof ApiError
           ? requestError.message
           : "AI 助手暂时不可用，请稍后重试。";
       setError(message);
-      setMessages((previous) =>
-        previous.map((item) =>
-          item.id === replyId
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantMessageId
             ? { ...item, content: "抱歉，当前无法获取回答，请稍后再试。" }
-            : item,
-        ),
+            : item
+        )
       );
     } finally {
       setIsTyping(false);
@@ -138,24 +206,28 @@ export function FloatingAIChat() {
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gradient-to-b from-gray-50 to-white">
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.isUser ? "justify-end" : "justify-start"}`}>
-                {!msg.isUser && (
+              <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                {msg.role !== "user" && (
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mr-1.5 flex-shrink-0 mt-1">
                     <Sparkles className="w-3 h-3 text-white" />
                   </div>
                 )}
                 <div
                   className={`max-w-[80%] rounded-2xl px-3 py-2 shadow-sm text-sm leading-relaxed ${
-                    msg.isUser
+                    msg.role === "user"
                       ? "bg-emerald-500 text-white rounded-br-sm"
                       : "bg-white text-gray-900 rounded-bl-sm border border-gray-200"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  ) : (
+                    <MarkdownMessage content={msg.content || "正在思考..."} />
+                  )}
                 </div>
               </div>
             ))}
-            {isTyping && !messages[messages.length - 1]?.content && (
+            {isTyping && (
               <div className="flex items-start gap-1.5">
                 <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mt-1">
                   <Sparkles className="w-3 h-3 text-white" />

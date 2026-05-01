@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser, DBSession, Pagination
+from app.api.deps import CurrentUser, DBSession, OptionalCurrentUser, Pagination
 from app.core.response import success
 from app.modules.user.schemas import UserProfileUpdateRequest, UserSettingsUpdateRequest
 from app.modules.user.service import UserService
@@ -37,10 +37,28 @@ async def update_settings(
     return success(data=data.model_dump(mode="json"))
 
 
-@router.get("/{user_id}")
-async def get_public_user(user_id: int, session: DBSession):
+@router.get("/me/favorites")
+async def list_my_favorites(session: DBSession, current_user: CurrentUser, pagination: Pagination):
     service = UserService()
-    data = await service.get_public_user(session, user_id)
+    data = await service.list_my_favorites(session, int(current_user.sub), pagination)
+    return success(data=data.model_dump(mode="json"))
+
+
+@router.get("/me/watch-history")
+async def list_my_watch_history(session: DBSession, current_user: CurrentUser, pagination: Pagination):
+    service = UserService()
+    data = await service.list_my_watch_history(session, int(current_user.sub), pagination)
+    return success(data=data.model_dump(mode="json"))
+
+
+@router.get("/{user_id}")
+async def get_public_user(user_id: int, session: DBSession, current_user: OptionalCurrentUser):
+    service = UserService()
+    data = await service.get_public_user(
+        session,
+        user_id,
+        viewer_user_id=int(current_user.sub) if current_user else None,
+    )
     return success(data=data.model_dump(mode="json"))
 
 

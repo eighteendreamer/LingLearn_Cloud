@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
+from math import exp
 
-from sqlalchemy import and_, func, literal, or_, select, update
+from sqlalchemy import and_, delete, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.content.models import ContentItem, ContentItemTag, ContentViewHistory
@@ -407,3 +408,63 @@ class RecommendationRepository:
                 .execution_options(synchronize_session=False)
             )
             await session.execute(stmt)
+
+    async def recalculate_content_hot_scores(
+        self,
+        session: AsyncSession,
+        *,
+        now: datetime | None = None,
+    ) -> int:
+        current_time = now or datetime.utcnow().replace(tzinfo=None)
+        stmt = select(
+            ContentItem.id,
+            ContentItem.views_count,
+            ContentItem.likes_count,
+            ContentItem.favorites_count,
+            ContentItem.comments_count,
+            ContentItem.shares_count,
+            ContentItem.published_at,
+        ).where(
+            ContentItem.deleted_at.is_(None),
+            ContentItem.visibility == "public",
+            ContentItem.audit_status == "approved",
+            ContentItem.publish_status == "published",
+            ContentItem.published_at.is_not(None),
+        )
+        rows = list((await session.execute(stmt)).mappings().all())
+
+        for row in rows:
+            published_at = row["published_at"]
+            age_days = 0
+            if published_at is not None:
+                age_days = max((current_time - published_at).total_seconds() / 86400, 0)
+            recency_bonus = exp(-age_days / 7) * 20
+            hot_score = (
+                float(row["views_count"] or 0) * 0.05
+                + float(row["likes_count"] or 0) * 1.0
+                + float(row["favorites_count"] or 0) * 1.5
+                + float(row["comments_count"] or 0) * 1.8
+                + float(row["shares_count"] or 0) * 1.2
+                + recency_bonus
+            )
+            await session.execute(
+                update(ContentItem)
+                .where(ContentItem.id == row["id"])
+                .values(hot_score=Decimal(str(round(hot_score, 4))))
+                .execution_options(synchronize_session=False)
+            )
+
+        return len(rows)
+
+    async def delete_old_impressions(
+        self,
+        session: AsyncSession,
+        *,
+        before: datetime,
+    ) -> int:
+        result = await session.execute(
+            delete(ContentRecommendationImpression).where(
+                ContentRecommendationImpression.shown_at < before
+            )
+        )
+        return int(result.rowcount or 0)

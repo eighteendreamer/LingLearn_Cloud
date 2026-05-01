@@ -24,11 +24,13 @@ from app.modules.content.schemas import (
     ContentCommentListResponse,
     ContentCommentResponse,
     ContentCreateRequest,
+    ContentFavoriteItemResponse,
     ContentInteractionResponse,
     ContentInteractionMutationResponse,
     ContentShareRequest,
     ContentUpdateRequest,
     ContentVideoResponse,
+    ContentWatchHistoryItemResponse,
     ContentWatchProgressRequest,
     FeedQueryParams,
     FeedVideosResponse,
@@ -243,6 +245,74 @@ class ContentService:
                     published_at=row["published_at"],
                 )
             )
+        return build_page_response(items, total, pagination)
+
+    async def search_contents(
+        self,
+        session: AsyncSession,
+        *,
+        viewer_user_id: int | None,
+        keyword: str | None,
+        category_id: int | None,
+        pagination: PaginationParams,
+    ):
+        rows, total = await self.repository.search_content_rows(
+            session,
+            viewer_user_id=viewer_user_id,
+            keyword=keyword,
+            category_id=category_id,
+            offset=pagination.offset,
+            limit=pagination.page_size,
+        )
+        items = [await self._build_content_video_response(row) for row in rows]
+        return build_page_response(items, total, pagination)
+
+    async def list_user_favorites(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        pagination: PaginationParams,
+    ):
+        rows, total = await self.repository.list_user_favorites(
+            session,
+            user_id=user_id,
+            offset=pagination.offset,
+            limit=pagination.page_size,
+        )
+        items = [
+            ContentFavoriteItemResponse(
+                content=await self._build_content_video_response(row),
+                favorited_at=row["favorited_at"],
+            )
+            for row in rows
+        ]
+        return build_page_response(items, total, pagination)
+
+    async def list_user_watch_history(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        pagination: PaginationParams,
+    ):
+        rows, total = await self.repository.list_user_watch_history(
+            session,
+            user_id=user_id,
+            offset=pagination.offset,
+            limit=pagination.page_size,
+        )
+        items = [
+            ContentWatchHistoryItemResponse(
+                content=await self._build_content_video_response(row),
+                watch_seconds=row["history_watch_seconds"],
+                watch_progress=float(row["history_watch_progress"]),
+                last_position_seconds=row["history_last_position_seconds"],
+                completed=bool(row["history_completed"]),
+                last_viewed_at=row["history_last_viewed_at"],
+            )
+            for row in rows
+        ]
         return build_page_response(items, total, pagination)
 
     async def like_content(

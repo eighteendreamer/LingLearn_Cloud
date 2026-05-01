@@ -208,6 +208,30 @@ class UserService:
             pagination=pagination,
         )
 
+    async def list_my_favorites(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        pagination: PaginationParams,
+    ):
+        return await self.content_service.list_user_favorites(
+            session,
+            user_id=user_id,
+            pagination=pagination,
+        )
+
+    async def list_my_watch_history(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        pagination: PaginationParams,
+    ):
+        return await self.content_service.list_user_watch_history(
+            session,
+            user_id=user_id,
+            pagination=pagination,
+        )
+
     @staticmethod
     def _build_stats(profile) -> UserStatsResponse:
         return UserStatsResponse(

@@ -10,10 +10,13 @@ import type {
   DiscoverHotTagResponse,
   DiscoverHotTopicResponse,
   ContentInteractionMutationResponse,
+  ContentQuizResponse,
   ContentSharePayload,
   ContentVideoResponse,
   ContentWatchProgressPayload,
   FeedVideosResponse,
+  QuizSubmitResponse,
+  SearchContentsResponse,
 } from "./types";
 
 export async function createContent(payload: ContentCreatePayload) {
@@ -50,6 +53,24 @@ export async function fetchFeedVideos(
     search.set("category_id", String(categoryId));
   }
   return apiRequest<FeedVideosResponse>(`/feed/videos?${search.toString()}`);
+}
+
+export async function fetchSearchContents(params: {
+  keyword?: string | null;
+  categoryId?: number | null;
+  page?: number;
+  pageSize?: number;
+}) {
+  const search = new URLSearchParams();
+  search.set("page", String(params.page ?? 1));
+  search.set("page_size", String(params.pageSize ?? 20));
+  if (params.keyword?.trim()) {
+    search.set("keyword", params.keyword.trim());
+  }
+  if (params.categoryId) {
+    search.set("category_id", String(params.categoryId));
+  }
+  return apiRequest<SearchContentsResponse>(`/search/contents?${search.toString()}`);
 }
 
 export async function likeContent(contentId: number) {
@@ -106,6 +127,17 @@ export async function reportWatchProgress(contentId: number, payload: ContentWat
   return apiRequest<ContentInteractionMutationResponse>(`/contents/${contentId}/watch-progress`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchContentQuizzes(contentId: number) {
+  return apiRequest<ContentQuizResponse[]>(`/contents/${contentId}/quizzes`);
+}
+
+export async function submitQuizAnswer(quizId: number, selectedOptionId: number) {
+  return apiRequest<QuizSubmitResponse>(`/quizzes/${quizId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ selected_option_id: selectedOptionId }),
   });
 }
 

@@ -7,6 +7,8 @@ import {
 } from "./session";
 import type {
   AuthTokenResponse,
+  ContentFavoriteItemResponse,
+  ContentWatchHistoryItemResponse,
   CurrentUserResponse,
   PageResponse,
   UserProfileUpdatePayload,
@@ -73,6 +75,18 @@ export async function updateMySettings(payload: UserSettingsUpdatePayload) {
 export async function fetchMyWorks(userId: number) {
   return apiRequest<PageResponse<UserWorkListItemResponse>>(
     `/users/${userId}/works?page=1&page_size=6`,
+  );
+}
+
+export async function fetchMyFavorites(page = 1, pageSize = 6) {
+  return apiRequest<PageResponse<ContentFavoriteItemResponse>>(
+    `/users/me/favorites?page=${page}&page_size=${pageSize}`,
+  );
+}
+
+export async function fetchMyWatchHistory(page = 1, pageSize = 6) {
+  return apiRequest<PageResponse<ContentWatchHistoryItemResponse>>(
+    `/users/me/watch-history?page=${page}&page_size=${pageSize}`,
   );
 }
 

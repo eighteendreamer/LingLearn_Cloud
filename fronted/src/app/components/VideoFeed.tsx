@@ -2,6 +2,7 @@ import type { MouseEvent, TouchEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
+  BookOpen,
   ChevronDown,
   ChevronUp,
   Heart,
@@ -19,9 +20,12 @@ import { Link } from "react-router";
 import { followUser, unfollowUser } from "../lib/account";
 import {
   fetchContentComments,
+  fetchContentQuizzes,
   fetchFeedVideos,
+  fetchSearchContents,
   reportWatchProgress,
   shareContent,
+  submitQuizAnswer,
   syncContentInteractionsBatch,
 } from "../lib/content";
 import {
@@ -40,6 +44,7 @@ import { getStoredSession, hasSession } from "../lib/session";
 import type {
   ContentCommentResponse,
   ContentInteractionResponse,
+  ContentQuizResponse,
   ContentVideoResponse,
 } from "../lib/types";
 import {
@@ -197,6 +202,13 @@ export function VideoFeed() {
   const [expandedReplyRootIds, setExpandedReplyRootIds] = useState<number[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ContentVideoResponse[] | null>(null);
+  const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const [quizItems, setQuizItems] = useState<ContentQuizResponse[]>([]);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizError, setQuizError] = useState("");
+  const [selectedQuizOptions, setSelectedQuizOptions] = useState<Record<number, number>>({});
+  const [submittingQuizId, setSubmittingQuizId] = useState<number | null>(null);
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const touchStartY = useRef(0);
@@ -206,6 +218,10 @@ export function VideoFeed() {
   const isFlushingQueueRef = useRef(false);
 
   const filteredVideos = useMemo(() => {
+    if (searchResults) {
+      return searchResults;
+    }
+
     const keyword = searchQuery.trim().toLowerCase();
     if (!keyword) {
       return videos;
@@ -229,6 +245,29 @@ export function VideoFeed() {
     : null;
   const commentThreads = useMemo(() => buildCommentThreads(comments), [comments]);
 
+  const syncVideoDerivedState = (items: ContentVideoResponse[]) => {
+    setResolvedDurations(
+      items.reduce<Record<number, number>>((accumulator, item) => {
+        if (item.duration_seconds && item.duration_seconds > 0) {
+          accumulator[item.id] = item.duration_seconds;
+        }
+        return accumulator;
+      }, {}),
+    );
+    setInteractionState(
+      items.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
+        accumulator[item.id] = buildQueuedInteractionState(item, syncQueueRef.current);
+        return accumulator;
+      }, {}),
+    );
+    setFollowState(
+      items.reduce<Record<number, boolean>>((accumulator, item) => {
+        accumulator[item.author.user_id] = item.author.is_following;
+        return accumulator;
+      }, {}),
+    );
+  };
+
   const applyFeedResponse = (
     items: ContentVideoResponse[],
     options?: {
@@ -240,28 +279,7 @@ export function VideoFeed() {
     const append = options?.append ?? false;
     setVideos((previous) => {
       const merged = append ? [...previous, ...items.filter((item) => !previous.some((video) => video.id === item.id))] : items;
-
-      setResolvedDurations(
-        merged.reduce<Record<number, number>>((accumulator, item) => {
-          if (item.duration_seconds && item.duration_seconds > 0) {
-            accumulator[item.id] = item.duration_seconds;
-          }
-          return accumulator;
-        }, {}),
-      );
-      setInteractionState(
-        merged.reduce<Record<number, VideoInteractionState>>((accumulator, item) => {
-          accumulator[item.id] = buildQueuedInteractionState(item, syncQueueRef.current);
-          return accumulator;
-        }, {}),
-      );
-      setFollowState(
-        merged.reduce<Record<number, boolean>>((accumulator, item) => {
-          accumulator[item.author.user_id] = item.author.is_following;
-          return accumulator;
-        }, {}),
-      );
-
+      syncVideoDerivedState(merged);
       return merged;
     });
     if (!append) {
@@ -348,6 +366,37 @@ export function VideoFeed() {
       cancelled = true;
     };
   }, [feedMode]);
+
+  useEffect(() => {
+    const keyword = searchQuery.trim();
+    if (!keyword) {
+      setSearchResults(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadSearchResults() {
+      try {
+        const response = await fetchSearchContents({ keyword, pageSize: 20 });
+        if (cancelled) {
+          return;
+        }
+        setSearchResults(response.list);
+        syncVideoDerivedState(response.list);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setSearchResults([]);
+        setActionMessage(error instanceof Error ? error.message : "搜索失败");
+      }
+    }
+
+    void loadSearchResults();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -729,6 +778,67 @@ export function VideoFeed() {
     setIsCommentOpen(true);
   };
 
+  const handleOpenQuiz = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!currentVideo || !currentVideo.has_quiz) {
+      return;
+    }
+    if (!hasSession()) {
+      setActionMessage("请先登录后再答题");
+      return;
+    }
+    setIsQuizOpen(true);
+    setQuizLoading(true);
+    setQuizError("");
+    try {
+      const response = await fetchContentQuizzes(currentVideo.id);
+      setQuizItems(response);
+      setSelectedQuizOptions(
+        response.reduce<Record<number, number>>((accumulator, quiz) => {
+          if (quiz.selected_option_id) {
+            accumulator[quiz.quiz_id] = quiz.selected_option_id;
+          }
+          return accumulator;
+        }, {}),
+      );
+    } catch (error) {
+      setQuizError(error instanceof Error ? error.message : "题目加载失败");
+      setQuizItems([]);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleSubmitQuiz = async (quizId: number) => {
+    const selectedOptionId = selectedQuizOptions[quizId];
+    if (!selectedOptionId || submittingQuizId) {
+      return;
+    }
+    setSubmittingQuizId(quizId);
+    setQuizError("");
+    try {
+      const response = await submitQuizAnswer(quizId, selectedOptionId);
+      setQuizItems((previous) =>
+        previous.map((quiz) =>
+          quiz.quiz_id === quizId
+            ? {
+                ...quiz,
+                total_votes: response.total_votes,
+                has_submitted: true,
+                selected_option_id: response.selected_option_id,
+                options: response.options,
+              }
+            : quiz,
+        ),
+      );
+      setActionMessage(response.is_correct ? "回答正确" : "已提交答案");
+    } catch (error) {
+      setQuizError(error instanceof Error ? error.message : "提交失败");
+    } finally {
+      setSubmittingQuizId(null);
+    }
+  };
+
   const handleSubmitComment = async () => {
     if (!currentVideo || !commentDraft.trim() || commentSubmitting) {
       return;
@@ -1058,6 +1168,17 @@ export function VideoFeed() {
                     </span>
                   </button>
 
+                  {video.has_quiz ? (
+                    <button onClick={handleOpenQuiz} className="flex flex-col items-center gap-1.5">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/95 shadow-lg">
+                        <BookOpen className="h-6 w-6 text-gray-700" />
+                      </div>
+                      <span className="rounded-full bg-black/45 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm backdrop-blur-sm">
+                        答题
+                      </span>
+                    </button>
+                  ) : null}
+
                   <button onClick={handleShare} className="flex flex-col items-center gap-1.5">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/95 shadow-lg">
                       <Share2 className="h-6 w-6 text-gray-700" />
@@ -1253,6 +1374,82 @@ export function VideoFeed() {
                   {commentSubmitting ? "发布中..." : "发表评论"}
                 </button>
               </div>
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <Drawer open={isQuizOpen} onOpenChange={setIsQuizOpen} direction="right">
+        <DrawerContent className="h-screen w-full overflow-hidden p-0 sm:max-w-md">
+          <DrawerHeader className="border-b px-6 py-4 text-left">
+            <DrawerTitle>视频答题</DrawerTitle>
+            <DrawerDescription>{currentVideo?.title || "当前视频"}</DrawerDescription>
+          </DrawerHeader>
+
+          <div className="flex h-full flex-col">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+              {quizLoading ? <p className="text-sm text-gray-500">正在加载题目...</p> : null}
+              {quizError ? <p className="text-sm text-red-500">{quizError}</p> : null}
+              {!quizLoading && !quizItems.length && !quizError ? (
+                <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center">
+                  <p className="text-sm font-medium text-gray-700">这个视频暂时没有题目</p>
+                </div>
+              ) : null}
+
+              {quizItems.map((quiz, index) => (
+                <div key={quiz.quiz_id} className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-emerald-600">题目 {index + 1}</p>
+                    <h3 className="mt-1 text-base font-semibold text-gray-900">{quiz.title}</h3>
+                    {quiz.description ? (
+                      <p className="mt-1 text-sm leading-6 text-gray-500">{quiz.description}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
+                    {quiz.options.map((option) => {
+                      const isSelected = selectedQuizOptions[quiz.quiz_id] === option.option_id;
+                      const canReveal = quiz.has_submitted && option.is_correct !== null;
+                      return (
+                        <button
+                          key={option.option_id}
+                          type="button"
+                          disabled={quiz.has_submitted}
+                          onClick={() =>
+                            setSelectedQuizOptions((previous) => ({
+                              ...previous,
+                              [quiz.quiz_id]: option.option_id,
+                            }))
+                          }
+                          className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                            isSelected
+                              ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                              : "border-gray-200 bg-gray-50 text-gray-700"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span>{option.option_text}</span>
+                            {canReveal ? (
+                              <span className={option.is_correct ? "text-emerald-600" : "text-gray-400"}>
+                                {option.is_correct ? "正确" : `${option.percent.toFixed(0)}%`}
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={quiz.has_submitted || !selectedQuizOptions[quiz.quiz_id] || submittingQuizId === quiz.quiz_id}
+                    onClick={() => void handleSubmitQuiz(quiz.quiz_id)}
+                    className="mt-4 w-full rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {quiz.has_submitted ? "已提交" : submittingQuizId === quiz.quiz_id ? "提交中..." : "提交答案"}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </DrawerContent>

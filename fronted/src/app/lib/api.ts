@@ -25,7 +25,7 @@ export class ApiError extends Error {
   }
 }
 
-function buildUrl(path: string) {
+export function buildApiUrl(path: string) {
   if (/^https?:\/\//.test(path)) {
     return path;
   }
@@ -62,7 +62,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     requestHeaders.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(buildApiUrl(path), {
     ...rest,
     headers: requestHeaders,
     body,

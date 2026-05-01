@@ -16,6 +16,7 @@ from app.modules.content.schemas import (
     FeedQueryParams,
 )
 from app.modules.content.service import ContentService
+from app.modules.quiz.service import QuizService
 
 contents_router = APIRouter()
 feed_router = APIRouter()
@@ -68,6 +69,21 @@ async def get_content_detail(
         viewer_user_id=int(current_user.sub) if current_user is not None else None,
     )
     return success(data=data.model_dump(mode="json"))
+
+
+@contents_router.get("/{content_id}/quizzes")
+async def list_content_quizzes(
+    content_id: int,
+    session: DBSession,
+    current_user: OptionalCurrentUser,
+):
+    service = QuizService()
+    data = await service.list_content_quizzes(
+        session,
+        content_id=content_id,
+        viewer_user_id=int(current_user.sub) if current_user is not None else None,
+    )
+    return success(data=[item.model_dump(mode="json") for item in data])
 
 
 @contents_router.put("/{content_id}")

@@ -1,25 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, ArrowLeft, Lightbulb } from "lucide-react";
 import { Link } from "react-router";
+import { apiRequest } from "../lib/api";
+import { streamAIChatMessage } from "../lib/ai-chat";
+import { MarkdownMessage } from "./MarkdownMessage";
+import type {
+  AIChatSessionResponse,
+  AIChatMessageResponse,
+  AIChatSessionCreatePayload,
+} from "../lib/types";
 
 interface Message {
-  id: string;
+  id: number;
   content: string;
-  isUser: boolean;
+  role: string;
   timestamp: Date;
 }
 
 export function AIChat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content: "你好！我是你的AI学习助手 🤖\n\n我可以帮你：\n• 解答编程问题\n• 讲解算法原理\n• 推荐学习路径\n• 代码审查建议\n\n有什么想问的吗？",
-      isUser: false,
-      timestamp: new Date(),
-    },
-  ]);
+  const [sessions, setSessions] = useState<AIChatSessionResponse[]>([]);
+  const [currentSession, setCurrentSession] = useState<AIChatSessionResponse | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const quickQuestions = [
@@ -37,57 +41,91 @@ export function AIChat() {
     scrollToBottom();
   }, [messages]);
 
-  const simulateResponse = async (userInput: string) => {
-    const responses: Record<string, string> = {
-      数据结构: "学习数据结构建议按这个顺序：\n\n1️⃣ 数组和字符串（基础）\n2️⃣ 链表（指针操作）\n3️⃣ 栈和队列（后进先出/先进先出）\n4️⃣ 树和二叉树（递归思想）\n5️⃣ 图（复杂关系）\n\n每学一个都要配合LeetCode练习哦！",
-      Python: "Python vs JavaScript：\n\n🐍 Python:\n• 语法简洁，适合初学者\n• 强大的数据分析库\n• 后端开发、AI/ML首选\n\n⚡ JavaScript:\n• 前端开发必备\n• Node.js做后端\n• 生态系统庞大\n\n建议：先学Python打基础，再学JS做全栈！",
-      前端: "前端学习路线推荐：\n\n📌 第一阶段（基础）\nHTML + CSS + JavaScript\n\n📌 第二阶段（框架）\nReact / Vue / Angular\n\n📌 第三阶段（工程化）\nWebpack、Vite、TypeScript\n\n📌 第四阶段（进阶）\n性能优化、设计模式、微前端\n\n每天坚持2小时，3个月见效！",
-      算法: "算法入门建议：\n\n✅ 从简单题开始\n• LeetCode Easy 题目\n• 每天1-2道题\n\n✅ 掌握基本套路\n• 双指针\n• 滑动窗口\n• 二分查找\n\n✅ 理解时间复杂度\nO(n), O(logn), O(n²)\n\n不要急，慢慢来！刷题贵在坚持！",
-      default: "这是个好问题！让我想想...\n\n基于你的问题，我建议：\n\n1. 先打好基础知识\n2. 多动手实践\n3. 看官方文档\n4. 参与开源项目\n\n有具体的困惑可以再问我！",
-    };
+  useEffect(() => {
+    loadSessions();
+  }, []);
 
-    let response = responses.default;
-    for (const [key, value] of Object.entries(responses)) {
-      if (userInput.includes(key)) {
-        response = value;
-        break;
+  const loadSessions = async () => {
+    try {
+      setLoading(true);
+      const sessionsData = await apiRequest<AIChatSessionResponse[]>("/ai/chat/sessions");
+      setSessions(sessionsData);
+      
+      if (sessionsData.length > 0) {
+        await loadSession(sessionsData[0]);
+      } else {
+        await createNewSession();
       }
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
+      await createNewSession();
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const words = response.split("");
-    let currentText = "";
-    const messageId = Date.now().toString();
+  const createNewSession = async () => {
+    try {
+      const payload: AIChatSessionCreatePayload = {
+        session_name: "新对话",
+        scene_code: "study_assistant",
+        model_name: "glm-4-flash",
+      };
+      const session = await apiRequest<AIChatSessionResponse>("/ai/chat/sessions", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setCurrentSession(session);
+      setSessions([session, ...sessions]);
+      setMessages([
+        {
+          id: 0,
+          content: "你好！我是你的AI学习助手 🤖\n\n我可以帮你：\n• 解答编程问题\n• 讲解算法原理\n• 推荐学习路径\n• 代码审查建议\n\n有什么想问的吗？",
+          role: "assistant",
+          timestamp: new Date(),
+        },
+      ]);
+    } catch (error) {
+      console.error("Failed to create session:", error);
+    }
+  };
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: messageId,
-        content: "",
-        isUser: false,
-        timestamp: new Date(),
-      },
-    ]);
-
-    for (let i = 0; i < words.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      currentText += words[i];
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId ? { ...msg, content: currentText } : msg
-        )
+  const loadSession = async (session: AIChatSessionResponse) => {
+    try {
+      setCurrentSession(session);
+      const messagesData = await apiRequest<AIChatMessageResponse[]>(
+        `/ai/chat/sessions/${session.id}/messages`
       );
-    }
+      
+      const formattedMessages: Message[] = messagesData.map((msg) => ({
+        id: msg.id,
+        content: msg.content,
+        role: msg.role,
+        timestamp: new Date(msg.created_at),
+      }));
 
-    setIsTyping(false);
+      if (formattedMessages.length === 0) {
+        formattedMessages.push({
+          id: 0,
+          content: "你好！我是你的AI学习助手 🤖\n\n我可以帮你：\n• 解答编程问题\n• 讲解算法原理\n• 推荐学习路径\n• 代码审查建议\n\n有什么想问的吗？",
+          role: "assistant",
+          timestamp: new Date(),
+        });
+      }
+
+      setMessages(formattedMessages);
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+    }
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
+    if (!input.trim() || isTyping || !currentSession) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: Date.now(),
       content: input,
-      isUser: true,
+      role: "user",
       timestamp: new Date(),
     };
 
@@ -95,13 +133,76 @@ export function AIChat() {
     const question = input;
     setInput("");
     setIsTyping(true);
+    const assistantMessageId = Date.now() + 1;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantMessageId,
+        content: "",
+        role: "assistant",
+        timestamp: new Date(),
+      },
+    ]);
 
-    await simulateResponse(question);
+    try {
+      await streamAIChatMessage(currentSession.id, {
+        content: question,
+        stream: true,
+      }, {
+        onDelta: (content) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, content: message.content + content }
+                : message
+            )
+          );
+        },
+        onDone: (message) => {
+          if (!message) {
+            return;
+          }
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantMessageId
+                ? {
+                    id: message.id,
+                    content: message.content,
+                    role: message.role,
+                    timestamp: new Date(message.created_at),
+                  }
+                : item
+            )
+          );
+        },
+      });
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantMessageId
+            ? { ...message, content: "抱歉，发送消息失败，请稍后重试。" }
+            : message
+        )
+      );
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleQuickQuestion = (question: string) => {
     setInput(question);
   };
+
+  if (loading) {
+    return (
+      <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-16">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-500">加载中...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-16">
@@ -124,21 +225,25 @@ export function AIChat() {
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex ${message.isUser ? "justify-end" : "justify-start"}`}
+            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {!message.isUser && (
+            {message.role !== "user" && (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center mr-2 flex-shrink-0">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
             )}
             <div
               className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-md ${
-                message.isUser
+                message.role === "user"
                   ? "bg-emerald-500 text-white rounded-br-sm"
                   : "bg-white text-gray-900 rounded-bl-sm border border-gray-200"
               }`}
             >
-              <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+              {message.role === "user" ? (
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+              ) : (
+                <MarkdownMessage content={message.content || "正在思考..."} className="text-sm leading-relaxed" />
+              )}
             </div>
           </div>
         ))}

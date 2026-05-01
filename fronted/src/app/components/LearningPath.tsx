@@ -1,5 +1,12 @@
+import { useEffect, useState } from "react";
 import { Check, Lock, PlayCircle, BookOpen, Brain, Lightbulb, Link as LinkIcon } from "lucide-react";
 import { Link } from "react-router";
+import {
+  fetchOrGenerateLearningPath,
+  fetchOrGenerateSkillProfile,
+  updateLearningPathNode,
+} from "../lib/learning-api";
+import type { SkillSnapshotResponse, UserLearningPathResponse } from "../lib/types";
 
 interface PathNode {
   id: string;
@@ -14,105 +21,60 @@ interface PathNode {
 }
 
 export function LearningPath() {
-  // 学生画像数据（来自StudentProfile）
-  const studentProfile = {
-    逻辑思维: 85,
-    创新能力: 72,
-    学习专注: 90,
-    团队协作: 68,
-    问题解决: 78,
-    知识掌握: 82,
-  };
+  const [profile, setProfile] = useState<SkillSnapshotResponse | null>(null);
+  const [learningPath, setLearningPath] = useState<UserLearningPathResponse | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // 根据学生画像动态生成学习路径
-  const generateLearningPath = (): PathNode[] => {
-    const allCourses = [
-      {
-        id: "1",
-        title: "编程基础",
-        description: "学习编程基本概念和Python语法",
-        status: "completed" as const,
-        lessons: 12,
-        duration: "8小时",
-        progress: 100,
-        requiredAbilities: ["知识掌握"],
-        recommendReason: "已完成基础课程，知识掌握能力强",
-        matchedAbilities: ["知识掌握: 82分"],
-      },
-      {
-        id: "2",
-        title: "数据结构",
-        description: "掌握数组、链表、栈、队列、树、图等核心数据结构",
-        status: "completed" as const,
-        lessons: 16,
-        duration: "12小时",
-        progress: 100,
-        requiredAbilities: ["逻辑思维"],
-        recommendReason: "逻辑思维能力优秀，适合深入学习数据结构",
-        matchedAbilities: ["逻辑思维: 85分"],
-      },
-      {
-        id: "3",
-        title: "算法进阶",
-        description: "学习排序、搜索、动态规划、贪心等经典算法",
-        status: "current" as const,
-        progress: 65,
-        lessons: 20,
-        duration: "15小时",
-        requiredAbilities: ["逻辑思维", "问题解决"],
-        recommendReason: "你的逻辑思维能力(85分)和问题解决能力(78分)都很强，继续发挥优势",
-        matchedAbilities: ["逻辑思维: 85分", "问题解决: 78分"],
-      },
-      {
-        id: "4",
-        title: "创新设计思维",
-        description: "培养创新思维，学习设计思维方法论和创意项目开发",
-        status: "locked" as const,
-        lessons: 18,
-        duration: "14小时",
-        requiredAbilities: ["创新能力"],
-        recommendReason: "AI建议：提升创新能力(当前72分)，通过开放性问题训练创造力",
-        matchedAbilities: ["创新能力: 72分 ⬆️"],
-      },
-      {
-        id: "5",
-        title: "团队协作项目",
-        description: "参与真实团队项目，学习Git协作、代码审查和敏捷开发",
-        status: "locked" as const,
-        lessons: 16,
-        duration: "12小时",
-        requiredAbilities: ["团队协作"],
-        recommendReason: "AI建议：加强团队协作能力(当前68分)，通过实践提升软技能",
-        matchedAbilities: ["团队协作: 68分 ⬆️"],
-      },
-      {
-        id: "6",
-        title: "Web前端开发",
-        description: "掌握HTML、CSS、JavaScript和React框架",
-        status: "locked" as const,
-        lessons: 24,
-        duration: "18小时",
-        requiredAbilities: ["学习专注", "知识掌握"],
-        recommendReason: "学习专注度高(90分)，适合学习内容密集的前端技术栈",
-        matchedAbilities: ["学习专注: 90分", "知识掌握: 82分"],
-      },
-      {
-        id: "7",
-        title: "全栈项目实战",
-        description: "综合运用所学知识，独立完成全栈应用开发",
-        status: "locked" as const,
-        lessons: 20,
-        duration: "25小时",
-        requiredAbilities: ["问题解决", "创新能力", "团队协作"],
-        recommendReason: "综合提升各项能力，完成完整项目作品集",
-        matchedAbilities: ["综合能力提升"],
-      },
-    ];
+  useEffect(() => {
+    const loadLearningPath = async () => {
+      try {
+        setLoading(true);
+        const [profileData, pathData] = await Promise.all([
+          fetchOrGenerateSkillProfile(),
+          fetchOrGenerateLearningPath(),
+        ]);
+        setProfile(profileData);
+        setLearningPath(pathData);
+      } catch (error) {
+        console.error("Failed to load learning path:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    return allCourses;
-  };
+    void loadLearningPath();
+  }, []);
 
-  const paths = generateLearningPath();
+  const studentProfile = Object.fromEntries(
+    (profile?.scores.length ? profile.scores : []).map((score) => [score.name, Math.round(score.score)])
+  ) as Record<string, number>;
+
+  const profileEntries = Object.entries(studentProfile).length > 0
+    ? Object.entries(studentProfile)
+    : [
+        ["编程基础", 78],
+        ["算法思维", 72],
+        ["数据库", 70],
+        ["前端开发", 75],
+        ["学习自驱", 82],
+      ];
+
+  const paths: PathNode[] = learningPath?.nodes.length
+    ? learningPath.nodes.map((node, index) => {
+        const isCurrent = learningPath.current_node_id === node.node_id || node.status === "in_progress" || node.status === "unlocked";
+        return {
+          id: String(node.node_id),
+          title: node.title,
+          description: node.description || "按计划完成该阶段学习任务。",
+          status: node.status === "completed" ? "completed" : isCurrent ? "current" : "locked",
+          progress: Math.round(node.progress_percent),
+          lessons: Math.max(1, Math.ceil(node.estimated_minutes / 30)),
+          duration: `${Math.max(1, Math.round(node.estimated_minutes / 60))}小时`,
+          recommendReason: node.recommended_reason || learningPath.ai_summary || "根据能力画像生成的个性化学习节点。",
+          matchedAbilities: profileEntries.slice(index, index + 2).map(([name, value]) => `${name}: ${value}分`),
+        };
+      })
+    : [];
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -141,8 +103,21 @@ export function LearningPath() {
   };
 
   const totalProgress = Math.round(
-    paths.reduce((sum, node) => sum + (node.progress || 0), 0) / paths.length
+    paths.length ? paths.reduce((sum, node) => sum + (node.progress || 0), 0) / paths.length : 0
   );
+
+  const handleCompleteNode = async (node: PathNode) => {
+    if (!learningPath) {
+      return;
+    }
+
+    try {
+      const updatedPath = await updateLearningPathNode(learningPath.id, Number(node.id), "completed", 100);
+      setLearningPath(updatedPath);
+    } catch (error) {
+      console.error("Failed to update learning path node:", error);
+    }
+  };
 
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
@@ -165,7 +140,7 @@ export function LearningPath() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {Object.entries(studentProfile).map(([dimension, value]) => (
+              {profileEntries.map(([dimension, value]) => (
                 <div key={dimension}>
                   <div className="flex justify-between text-sm mb-1.5">
                     <span className="text-gray-700">{dimension}</span>
@@ -191,8 +166,8 @@ export function LearningPath() {
                 <h3 className="font-semibold text-emerald-900 mb-2 text-sm">AI智能建议</h3>
                 <div className="text-xs text-emerald-800 space-y-2">
                   <p>✅ <strong>优势：</strong>学习专注、逻辑思维强</p>
-                  <p>💡 <strong>成长：</strong>提升团队协作与创新</p>
-                  <p>🎯 <strong>策略：</strong>先巩固算法，再补短板</p>
+                  <p>💡 <strong>成长：</strong>{loading ? "正在生成后端建议" : (learningPath?.ai_summary || "按当前路径逐步推进")}</p>
+                  <p>🎯 <strong>策略：</strong>优先完成当前节点，再解锁后续阶段</p>
                 </div>
               </div>
             </div>
@@ -326,9 +301,12 @@ export function LearningPath() {
 
                 <div className="flex gap-3">
                   {node.status === "current" && (
-                    <button className="px-5 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium flex items-center gap-2">
+                    <button
+                      onClick={() => void handleCompleteNode(node)}
+                      className="px-5 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium flex items-center gap-2"
+                    >
                       <PlayCircle className="w-4 h-4" />
-                      继续学习
+                      标记完成
                     </button>
                   )}
 

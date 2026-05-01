@@ -188,6 +188,50 @@ export interface FeedVideosResponse {
   has_more: boolean;
 }
 
+export type SearchContentsResponse = PageResponse<ContentVideoResponse>;
+
+export interface ContentFavoriteItemResponse {
+  content: ContentVideoResponse;
+  favorited_at: string;
+}
+
+export interface ContentWatchHistoryItemResponse {
+  content: ContentVideoResponse;
+  watch_seconds: number;
+  watch_progress: number;
+  last_position_seconds: number;
+  completed: boolean;
+  last_viewed_at: string;
+}
+
+export interface QuizOptionResponse {
+  option_id: number;
+  option_text: string;
+  vote_count: number;
+  percent: number;
+  is_correct: boolean | null;
+}
+
+export interface ContentQuizResponse {
+  quiz_id: number;
+  content_id: number;
+  title: string;
+  description: string | null;
+  quiz_type: string;
+  total_votes: number;
+  has_submitted: boolean;
+  selected_option_id: number | null;
+  options: QuizOptionResponse[];
+}
+
+export interface QuizSubmitResponse {
+  quiz_id: number;
+  selected_option_id: number;
+  is_correct: boolean;
+  total_votes: number;
+  options: QuizOptionResponse[];
+}
+
 export interface ContentCreatePayload {
   title: string;
   summary?: string | null;
@@ -258,4 +302,282 @@ export interface ContentInteractionBatchItemResponse {
 
 export interface ContentInteractionBatchSyncResponse {
   items: ContentInteractionBatchItemResponse[];
+}
+
+// ============ Backend B Types ============
+
+// Learning Dashboard
+export interface LearningDashboardResponse {
+  total_learning_minutes: number;
+  favorites_count: number;
+  streak_days: number;
+  completed_goals: number;
+}
+
+export interface CourseEnrollmentResponse {
+  id: number;
+  course_id: number;
+  course_title: string;
+  course_cover_url: string | null;
+  instructor_name: string;
+  total_lessons: number;
+  completed_lessons: number;
+  progress_percent: number;
+  last_learned_at: string | null;
+  enrolled_at: string;
+}
+
+// Practice
+export interface QuestionBankResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  category?: string;
+  difficulty: string;
+  question_count: number;
+  total_score?: number;
+}
+
+export interface PracticeQuestionResponse {
+  id: number;
+  question_text?: string;
+  content?: string;
+  question_type: string;
+  difficulty?: string;
+  score: number;
+  options: PracticeQuestionOptionResponse[];
+}
+
+export interface PracticeQuestionOptionResponse {
+  id: number;
+  option_text?: string;
+  content?: string;
+  option_order?: number;
+  sort_order?: number;
+}
+
+export interface PracticeSessionResponse {
+  id: number;
+  bank_id: number;
+  session_type: string;
+  status: string;
+  total_score?: number;
+  earned_score?: number;
+  total_questions: number;
+  answered_questions: number;
+  started_at?: string;
+  created_at?: string;
+  completed_at?: string | null;
+}
+
+export interface PracticeSessionCreatePayload {
+  bank_id: number;
+  session_type: string;
+}
+
+export interface PracticeAnswerSubmitPayload {
+  question_id: number;
+  selected_option_ids: number[];
+}
+
+export interface PracticeAnswerResponse {
+  question_id: number;
+  is_correct: boolean;
+  score?: number;
+  earned_score?: number;
+  correct_option_ids?: number[];
+}
+
+export interface PracticeSessionSubmitResponse {
+  session_id: number;
+  total_questions: number;
+  correct_answers: number;
+  total_score: number;
+  earned_score: number;
+  accuracy: number;
+}
+
+export interface PracticeSessionResultAnswer {
+  question_id: number;
+  is_correct: boolean;
+  earned_score: number;
+}
+
+export interface PracticeSessionResultResponse extends PracticeSessionSubmitResponse {
+  bank_title: string;
+  submitted_at: string;
+  answers: PracticeSessionResultAnswer[];
+}
+
+// Assessment
+export interface AssessmentSnapshotResponse {
+  id: number;
+  user_id: number;
+  assessment_type: string;
+  period_start: string;
+  period_end: string;
+  total_learning_minutes: number;
+  completed_courses: number;
+  average_score: number;
+  rank_percent: number | null;
+  correct_rate: number | null;
+  focus_rate: number | null;
+  metrics_json: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssessmentTrendDataPoint {
+  date: string;
+  learning_minutes: number;
+  average_score: number;
+  correct_rate: number | null;
+}
+
+export interface AssessmentTrendResponse {
+  assessment_type: string;
+  data_points: AssessmentTrendDataPoint[];
+}
+
+export interface AssessmentGeneratePayload {
+  assessment_type: string;
+  force_regenerate?: boolean;
+}
+
+// Student profile and learning path
+export interface SkillScoreResponse {
+  dimension_id: number;
+  code: string;
+  name: string;
+  score: number;
+  percentile: number | null;
+  level: string | null;
+  insight: string | null;
+}
+
+export interface SkillSnapshotResponse {
+  id: number;
+  user_id: number;
+  source_type: string;
+  source_ref_id: number | null;
+  snapshot_version: number;
+  total_score: number | null;
+  rank_percent: number | null;
+  generated_by: string;
+  generated_at: string;
+  scores: SkillScoreResponse[];
+}
+
+export interface LearningPathNodeResponse {
+  id: number;
+  node_id: number;
+  title: string;
+  description: string | null;
+  node_type: string;
+  course_id: number | null;
+  status: string;
+  progress_percent: number;
+  sort_order: number;
+  recommended_reason: string | null;
+  estimated_minutes: number;
+}
+
+export interface UserLearningPathResponse {
+  id: number;
+  path_id: number;
+  name: string;
+  description: string | null;
+  target_role: string | null;
+  status: string;
+  progress_percent: number;
+  current_node_id: number | null;
+  ai_summary: string | null;
+  nodes: LearningPathNodeResponse[];
+}
+
+export interface LearningPathGeneratePayload {
+  target_role?: string | null;
+  current_level?: string;
+}
+
+// Reports
+export interface ReportAchievementResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  color_token: string | null;
+  sort_order: number;
+}
+
+export interface MonthlyReportResponse {
+  id: number;
+  user_id: number;
+  report_month: string;
+  assessment_snapshot_id: number | null;
+  report_status: string;
+  total_learning_minutes: number;
+  completed_courses: number;
+  average_score: number;
+  site_rank: number | null;
+  strengths: string[];
+  improvements: string[];
+  ai_summary: string | null;
+  exported_pdf_asset_id: number | null;
+  generated_at: string;
+  achievements: ReportAchievementResponse[];
+}
+
+// Notification
+export interface NotificationResponse {
+  id: number;
+  notification_type: string;
+  title: string;
+  body: string;
+  biz_type: string | null;
+  biz_id: number | null;
+  read_status: boolean;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationUnreadCountResponse {
+  unread_count: number;
+}
+
+// AI Chat
+export interface AIChatSessionResponse {
+  id: number;
+  session_name: string | null;
+  scene_code: string;
+  model_name: string;
+  status: string;
+  summary: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIChatMessageResponse {
+  id: number;
+  session_id: number;
+  role: string;
+  message_type: string;
+  content: string;
+  token_count: number;
+  latency_ms: number | null;
+  error_code: string | null;
+  trace_id: string | null;
+  created_at: string;
+}
+
+export interface AIChatSessionCreatePayload {
+  session_name?: string | null;
+  scene_code?: string;
+  model_name?: string;
+}
+
+export interface AIChatMessageSendPayload {
+  content: string;
+  stream?: boolean;
 }

@@ -316,6 +316,51 @@ class RecommendationService:
             clicked_at=clicked_at,
         )
 
+    async def refresh_hot_scores(self, session: AsyncSession) -> int:
+        async with session.begin():
+            return await self.repository.recalculate_content_hot_scores(session)
+
+    async def decay_interest_profiles(
+        self,
+        session: AsyncSession,
+        *,
+        ratio: Decimal = Decimal("0.95"),
+    ) -> None:
+        if ratio <= 0 or ratio > 1:
+            raise ValueError("Interest decay ratio must be in the range (0, 1].")
+        async with session.begin():
+            await self.repository.apply_interest_decay(session, ratio=ratio)
+
+    async def cleanup_old_impressions(
+        self,
+        session: AsyncSession,
+        *,
+        retention_days: int = 30,
+    ) -> int:
+        if retention_days <= 0:
+            raise ValueError("Retention days must be positive.")
+        before = datetime.utcnow().replace(tzinfo=None) - timedelta(days=retention_days)
+        async with session.begin():
+            return await self.repository.delete_old_impressions(session, before=before)
+
+    async def run_maintenance(
+        self,
+        session: AsyncSession,
+        *,
+        interest_decay_ratio: Decimal = Decimal("0.95"),
+        impression_retention_days: int = 30,
+    ) -> dict[str, int]:
+        hot_score_count = await self.refresh_hot_scores(session)
+        await self.decay_interest_profiles(session, ratio=interest_decay_ratio)
+        deleted_impressions = await self.cleanup_old_impressions(
+            session,
+            retention_days=impression_retention_days,
+        )
+        return {
+            "hot_score_updated": hot_score_count,
+            "old_impressions_deleted": deleted_impressions,
+        }
+
     async def _build_cold_start_rows(
         self,
         session: AsyncSession,
@@ -636,7 +681,10 @@ class RecommendationService:
         limit: int,
     ) -> tuple[list[dict], list[dict]]:
         if not fresh_rows:
-            return rows[:limit], candidate_items[:limit]
+            return RecommendationService._diversify_rows_with_items(
+                rows=rows[:limit],
+                items=candidate_items[:limit],
+            )
 
         row_map = {int(row["id"]): row for row in rows}
         item_map = {int(item["content_id"]): item for item in candidate_items}
@@ -662,4 +710,42 @@ class RecommendationService:
                 break
 
         ordered_ids = ordered_ids[:limit]
-        return [row_map[content_id] for content_id in ordered_ids], [item_map[content_id] for content_id in ordered_ids]
+        return RecommendationService._diversify_rows_with_items(
+            rows=[row_map[content_id] for content_id in ordered_ids],
+            items=[item_map[content_id] for content_id in ordered_ids],
+        )
+
+    @staticmethod
+    def _diversify_rows_with_items(
+        *,
+        rows: list[dict],
+        items: list[dict],
+    ) -> tuple[list[dict], list[dict]]:
+        remaining = list(zip(rows, items, strict=False))
+        selected: list[tuple[dict, dict]] = []
+
+        while remaining:
+            chosen_index = 0
+            for index, (row, _) in enumerate(remaining):
+                if RecommendationService._passes_diversity(row, [item[0] for item in selected]):
+                    chosen_index = index
+                    break
+            selected.append(remaining.pop(chosen_index))
+
+        return [row for row, _ in selected], [item for _, item in selected]
+
+    @staticmethod
+    def _passes_diversity(candidate: dict, selected_rows: list[dict]) -> bool:
+        author_id = candidate.get("author_id")
+        if author_id is not None:
+            recent_authors = [row.get("author_id") for row in selected_rows[-2:]]
+            if author_id in recent_authors:
+                return False
+
+        category_id = candidate.get("category_id")
+        if category_id is not None:
+            recent_categories = [row.get("category_id") for row in selected_rows[-3:]]
+            if recent_categories.count(category_id) >= 2:
+                return False
+
+        return True

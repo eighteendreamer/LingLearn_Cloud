@@ -79,6 +79,20 @@ class FeedVideosResponse(BaseModel):
     has_more: bool
 
 
+class ContentFavoriteItemResponse(BaseModel):
+    content: ContentVideoResponse
+    favorited_at: datetime
+
+
+class ContentWatchHistoryItemResponse(BaseModel):
+    content: ContentVideoResponse
+    watch_seconds: int
+    watch_progress: float
+    last_position_seconds: int
+    completed: bool
+    last_viewed_at: datetime
+
+
 class ContentCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     summary: str | None = Field(default=None, max_length=500)

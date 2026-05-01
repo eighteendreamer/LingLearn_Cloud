@@ -193,3 +193,53 @@ class ContentViewHistory(Base, TimestampMixin):
     liked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     favorited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_viewed_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())
+
+
+class ContentQuiz(Base, TimestampMixin):
+    __tablename__ = "content_quizzes"
+    __table_args__ = (
+        UniqueConstraint("content_item_id", "sort_order", name="uk_content_quiz_sort"),
+        Index("idx_quizzes_content_status", "content_item_id", "status", "sort_order"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    content_item_id: Mapped[int] = mapped_column(ForeignKey("content_items.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    quiz_type: Mapped[str] = mapped_column(String(32), nullable=False, default="single_choice_poll")
+    sort_order: Mapped[int] = mapped_column(nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="published")
+    total_votes: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0)
+
+
+class ContentQuizOption(Base):
+    __tablename__ = "content_quiz_options"
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "option_order", name="uk_quiz_option_order"),
+        Index("idx_quiz_options_quiz_order", "quiz_id", "option_order"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("content_quizzes.id"), nullable=False)
+    option_text: Mapped[str] = mapped_column(String(255), nullable=False)
+    option_order: Mapped[int] = mapped_column(nullable=False, default=0)
+    vote_count: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0)
+    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())
+
+
+class ContentQuizAttempt(Base):
+    __tablename__ = "content_quiz_attempts"
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "user_id", name="uk_quiz_attempt_user"),
+        Index("idx_quiz_attempts_user_submitted", "user_id", "submitted_at"),
+        Index("idx_quiz_attempts_option_id", "selected_option_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("content_quizzes.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    selected_option_id: Mapped[int] = mapped_column(ForeignKey("content_quiz_options.id"), nullable=False)
+    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(), nullable=False, server_default=func.now())
+    client_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)

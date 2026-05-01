@@ -16,6 +16,9 @@ from app.modules.content.models import (
     ContentItem,
     ContentItemTag,
     ContentLike,
+    ContentQuiz,
+    ContentQuizAttempt,
+    ContentQuizOption,
     ContentShare,
     ContentViewHistory,
     Tag,
@@ -573,6 +576,126 @@ class ContentRepository:
         stmt = stmt.limit(limit)
         return list((await session.execute(stmt)).mappings().all())
 
+    async def search_content_rows(
+        self,
+        session: AsyncSession,
+        *,
+        viewer_user_id: int | None,
+        keyword: str | None,
+        category_id: int | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict], int]:
+        normalized_keyword = keyword.strip() if keyword else ""
+        id_stmt = (
+            select(ContentItem.id)
+            .select_from(ContentItem)
+            .outerjoin(ContentCategory, ContentCategory.id == ContentItem.category_id)
+            .outerjoin(ContentItemTag, ContentItemTag.content_item_id == ContentItem.id)
+            .outerjoin(Tag, Tag.id == ContentItemTag.tag_id)
+            .where(*self._public_content_conditions())
+        )
+
+        if category_id is not None:
+            id_stmt = id_stmt.where(ContentItem.category_id == category_id)
+        if normalized_keyword:
+            pattern = f"%{normalized_keyword}%"
+            id_stmt = id_stmt.where(
+                or_(
+                    ContentItem.title.ilike(pattern),
+                    ContentItem.summary.ilike(pattern),
+                    ContentCategory.name.ilike(pattern),
+                    Tag.name.ilike(pattern),
+                )
+            )
+
+        id_subquery = id_stmt.subquery()
+        total_stmt = select(func.count(func.distinct(id_subquery.c.id)))
+        total = int((await session.scalar(total_stmt)) or 0)
+
+        id_rows = list(
+            (
+                await session.execute(
+                    id_stmt.distinct()
+                    .order_by(
+                        ContentItem.hot_score.desc(),
+                        ContentItem.published_at.desc(),
+                        ContentItem.id.desc(),
+                    )
+                    .offset(offset)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rows = await self.get_content_rows_by_ids(
+            session,
+            viewer_user_id=viewer_user_id,
+            content_ids=[int(content_id) for content_id in id_rows],
+        )
+        return rows, total
+
+    async def list_user_favorites(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict], int]:
+        total_stmt = (
+            select(func.count())
+            .select_from(ContentFavorite)
+            .join(ContentItem, ContentItem.id == ContentFavorite.content_item_id)
+            .where(ContentFavorite.user_id == user_id, *self._public_content_conditions())
+        )
+        total = int((await session.scalar(total_stmt)) or 0)
+
+        stmt = (
+            self._build_content_row_stmt(viewer_user_id=user_id)
+            .add_columns(ContentFavorite.created_at.label("favorited_at"))
+            .join(ContentFavorite, ContentFavorite.content_item_id == ContentItem.id)
+            .where(ContentFavorite.user_id == user_id, *self._public_content_conditions())
+            .order_by(ContentFavorite.created_at.desc(), ContentFavorite.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).mappings().all()), total
+
+    async def list_user_watch_history(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict], int]:
+        total_stmt = (
+            select(func.count())
+            .select_from(ContentViewHistory)
+            .join(ContentItem, ContentItem.id == ContentViewHistory.content_item_id)
+            .where(ContentViewHistory.user_id == user_id, *self._public_content_conditions())
+        )
+        total = int((await session.scalar(total_stmt)) or 0)
+
+        stmt = (
+            self._build_content_row_stmt(viewer_user_id=user_id)
+            .add_columns(
+                ContentViewHistory.watch_seconds.label("history_watch_seconds"),
+                ContentViewHistory.watch_progress.label("history_watch_progress"),
+                ContentViewHistory.last_position_seconds.label("history_last_position_seconds"),
+                ContentViewHistory.completed.label("history_completed"),
+                ContentViewHistory.last_viewed_at.label("history_last_viewed_at"),
+            )
+            .join(ContentViewHistory, ContentViewHistory.content_item_id == ContentItem.id)
+            .where(ContentViewHistory.user_id == user_id, *self._public_content_conditions())
+            .order_by(ContentViewHistory.last_viewed_at.desc(), ContentViewHistory.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).mappings().all()), total
+
     async def list_recommendation_candidate_rows(
         self,
         session: AsyncSession,
@@ -644,6 +767,98 @@ class ContentRepository:
         stmt = select(ContentItemTag.tag_id).where(ContentItemTag.content_item_id == content_item_id)
         return [int(value) for value in (await session.scalars(stmt)).all()]
 
+    async def list_published_quizzes(
+        self,
+        session: AsyncSession,
+        *,
+        content_item_id: int,
+    ) -> list[ContentQuiz]:
+        stmt = (
+            select(ContentQuiz)
+            .where(ContentQuiz.content_item_id == content_item_id, ContentQuiz.status == "published")
+            .order_by(ContentQuiz.sort_order.asc(), ContentQuiz.id.asc())
+        )
+        return list((await session.scalars(stmt)).all())
+
+    async def list_quiz_options(
+        self,
+        session: AsyncSession,
+        *,
+        quiz_ids: Sequence[int],
+    ) -> list[ContentQuizOption]:
+        if not quiz_ids:
+            return []
+        stmt = (
+            select(ContentQuizOption)
+            .where(ContentQuizOption.quiz_id.in_(list(quiz_ids)))
+            .order_by(ContentQuizOption.quiz_id.asc(), ContentQuizOption.option_order.asc())
+        )
+        return list((await session.scalars(stmt)).all())
+
+    async def get_quiz_by_id(self, session: AsyncSession, quiz_id: int) -> ContentQuiz | None:
+        return await session.get(ContentQuiz, quiz_id)
+
+    async def get_quiz_option_by_id(
+        self,
+        session: AsyncSession,
+        option_id: int,
+    ) -> ContentQuizOption | None:
+        return await session.get(ContentQuizOption, option_id)
+
+    async def get_quiz_attempt(
+        self,
+        session: AsyncSession,
+        *,
+        quiz_id: int,
+        user_id: int,
+    ) -> ContentQuizAttempt | None:
+        stmt = select(ContentQuizAttempt).where(
+            ContentQuizAttempt.quiz_id == quiz_id,
+            ContentQuizAttempt.user_id == user_id,
+        )
+        return await session.scalar(stmt)
+
+    async def create_quiz_attempt(
+        self,
+        session: AsyncSession,
+        *,
+        quiz_id: int,
+        user_id: int,
+        selected_option_id: int,
+        is_correct: bool,
+        client_ip: str | None,
+    ) -> ContentQuizAttempt:
+        attempt = ContentQuizAttempt(
+            quiz_id=quiz_id,
+            user_id=user_id,
+            selected_option_id=selected_option_id,
+            is_correct=is_correct,
+            client_ip=client_ip,
+        )
+        session.add(attempt)
+        await session.flush()
+        return attempt
+
+    async def increment_quiz_vote(
+        self,
+        session: AsyncSession,
+        *,
+        quiz_id: int,
+        option_id: int,
+    ) -> None:
+        await session.execute(
+            update(ContentQuiz)
+            .where(ContentQuiz.id == quiz_id)
+            .values(total_votes=ContentQuiz.total_votes + 1)
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(
+            update(ContentQuizOption)
+            .where(ContentQuizOption.id == option_id)
+            .values(vote_count=ContentQuizOption.vote_count + 1)
+            .execution_options(synchronize_session=False)
+        )
+
     async def list_author_works_rows(
         self,
         session: AsyncSession,
@@ -691,6 +906,8 @@ class ContentRepository:
         primary_asset = aliased(MediaAsset)
         avatar_asset = aliased(MediaAsset)
         viewer_follow_relation = aliased(UserFollowRelation)
+        viewer_like = aliased(ContentLike)
+        viewer_favorite = aliased(ContentFavorite)
 
         liked_expr = literal(False)
         favorited_expr = literal(False)
@@ -698,14 +915,14 @@ class ContentRepository:
         if viewer_user_id is not None:
             liked_expr = exists(
                 select(1).where(
-                    ContentLike.user_id == viewer_user_id,
-                    ContentLike.content_item_id == ContentItem.id,
+                    viewer_like.user_id == viewer_user_id,
+                    viewer_like.content_item_id == ContentItem.id,
                 )
             )
             favorited_expr = exists(
                 select(1).where(
-                    ContentFavorite.user_id == viewer_user_id,
-                    ContentFavorite.content_item_id == ContentItem.id,
+                    viewer_favorite.user_id == viewer_user_id,
+                    viewer_favorite.content_item_id == ContentItem.id,
                 )
             )
             author_following_expr = viewer_follow_relation.id.is_not(None)

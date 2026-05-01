@@ -5,6 +5,7 @@ import {
   fetchDiscoverHotTags,
   fetchDiscoverHotTopics,
   fetchFeedVideos,
+  fetchSearchContents,
 } from "../lib/content";
 import type {
   ContentCategoryResponse,
@@ -80,11 +81,19 @@ export function Discover() {
     async function loadDiscover() {
       try {
         setLoading(true);
+        const videoRequest =
+          deferredQuery || selectedCategoryId
+            ? fetchSearchContents({
+                keyword: deferredQuery,
+                categoryId: selectedCategoryId,
+                pageSize: 8,
+              })
+            : fetchFeedVideos(undefined, "hot", selectedCategoryId);
         const [categoryData, topicData, tagData, feedData] = await Promise.all([
           fetchContentCategories(),
           fetchDiscoverHotTopics(),
           fetchDiscoverHotTags(),
-          fetchFeedVideos(undefined, "hot", selectedCategoryId),
+          videoRequest,
         ]);
 
         if (!active) {
@@ -114,7 +123,7 @@ export function Discover() {
     return () => {
       active = false;
     };
-  }, [selectedCategoryId]);
+  }, [deferredQuery, selectedCategoryId]);
 
   const filteredVideos = useMemo(() => {
     if (!deferredQuery) {
