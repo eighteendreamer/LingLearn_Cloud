@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import { LayoutDashboard, User, MessageSquare, Route, BookOpen, PenTool, BarChart3, FileText, Settings, Bell } from "lucide-react";
+import { apiRequest } from "../lib/api";
+import type { NotificationUnreadCountResponse } from "../lib/types";
 
 const navigation = [
   { name: "总览", path: "/", icon: LayoutDashboard },
@@ -15,13 +18,32 @@ const navigation = [
 
 export function RootLayout() {
   const location = useLocation();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    loadUnreadCount();
+    // 每30秒刷新一次未读数量
+    const interval = setInterval(loadUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadUnreadCount = async () => {
+    try {
+      const data = await apiRequest<NotificationUnreadCountResponse>(
+        "/users/me/notifications/unread-count"
+      );
+      setUnreadCount(data.unread_count);
+    } catch (error) {
+      console.error("Failed to load unread count:", error);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50">
       <aside className="w-16 bg-white border-r border-gray-200 flex flex-col items-center py-6">
         <div className="mb-8">
           <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">H</span>
+            <span className="text-white font-bold text-lg">L</span>
           </div>
         </div>
         <nav className="flex-1 w-full">
@@ -51,8 +73,19 @@ export function RootLayout() {
             })}
           </ul>
         </nav>
-        <button className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button 
+          className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center relative"
+          onClick={() => {
+            // 可以在这里添加打开通知面板的逻辑
+            console.log("Open notifications");
+          }}
+        >
           <Bell className="w-5 h-5 text-gray-600" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
       </aside>
       <main className="flex-1 overflow-y-auto bg-gray-50">

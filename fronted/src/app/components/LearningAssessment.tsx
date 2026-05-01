@@ -1,23 +1,70 @@
+import { useEffect, useState } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
+import { apiRequest } from "../lib/api";
+import type { AssessmentSnapshotResponse, AssessmentTrendResponse } from "../lib/types";
 
 export function LearningAssessment() {
-  const weeklyData = [
-    { name: "周一", 学习时长: 2.5, 完成任务: 3 },
-    { name: "周二", 学习时长: 3.2, 完成任务: 4 },
-    { name: "周三", 学习时长: 1.8, 完成任务: 2 },
-    { name: "周四", 学习时长: 4.1, 完成任务: 5 },
-    { name: "周五", 学习时长: 3.5, 完成任务: 4 },
-    { name: "周六", 学习时长: 5.2, 完成任务: 6 },
-    { name: "周日", 学习时长: 4.8, 完成任务: 5 },
-  ];
+  const [assessment, setAssessment] = useState<AssessmentSnapshotResponse | null>(null);
+  const [trend, setTrend] = useState<AssessmentTrendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const progressData = [
-    { month: "1月", 进度: 45 },
-    { month: "2月", 进度: 58 },
-    { month: "3月", 进度: 72 },
-    { month: "4月", 进度: 78 },
-  ];
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [assessmentData, trendData] = await Promise.all([
+        apiRequest<AssessmentSnapshotResponse>("/users/me/assessments/latest"),
+        apiRequest<AssessmentTrendResponse>("/users/me/assessments/trend?assessment_type=weekly"),
+      ]);
+      setAssessment(assessmentData);
+      setTrend(trendData);
+    } catch (error) {
+      console.error("Failed to load assessment data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const performanceMetrics = assessment ? [
+    { 
+      label: "平均测试分数", 
+      value: assessment.average_score.toFixed(0), 
+      unit: "分", 
+      trend: "+5%", 
+      up: true 
+    },
+    { 
+      label: "课程完成数", 
+      value: assessment.completed_courses.toString(), 
+      unit: "门", 
+      trend: "+2", 
+      up: true 
+    },
+    { 
+      label: "练习正确率", 
+      value: assessment.correct_rate?.toFixed(0) || "0", 
+      unit: "%", 
+      trend: "+3%", 
+      up: true 
+    },
+    { 
+      label: "学习专注度", 
+      value: assessment.focus_rate?.toFixed(0) || "0", 
+      unit: "%", 
+      trend: "+2%", 
+      up: true 
+    },
+  ] : [];
+
+  const weeklyData = trend?.data_points.map((point, index) => ({
+    name: `第${index + 1}周`,
+    学习时长: (point.learning_minutes / 60).toFixed(1),
+    平均分数: point.average_score.toFixed(1),
+  })) || [];
 
   const categoryData = [
     { name: "编程", value: 35, color: "#10b981" },
@@ -27,17 +74,54 @@ export function LearningAssessment() {
     { name: "其他", value: 5, color: "#6b7280" },
   ];
 
-  const performanceMetrics = [
-    { label: "平均测试分数", value: "87", unit: "分", trend: "+5%", up: true },
-    { label: "课程完成率", value: "92", unit: "%", trend: "+8%", up: true },
-    { label: "练习正确率", value: "84", unit: "%", trend: "+3%", up: true },
-    { label: "学习专注度", value: "89", unit: "%", trend: "+2%", up: true },
-  ];
-
   const getTrendIcon = (up: boolean) => {
     if (up) return <TrendingUp className="w-4 h-4" />;
     return <TrendingDown className="w-4 h-4" />;
   };
+
+  if (loading) {
+    return (
+      <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
+        <div className="p-8 max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-500">加载中...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!assessment) {
+    return (
+      <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
+        <div className="p-8 max-w-7xl mx-auto">
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold text-gray-800 mb-2">学习评估</h1>
+            <p className="text-gray-600">通过数据可视化了解你的学习表现</p>
+          </div>
+          <div className="bg-white rounded-xl p-8 text-center">
+            <p className="text-gray-500 mb-4">还没有评估数据</p>
+            <button
+              onClick={async () => {
+                try {
+                  await apiRequest("/users/me/assessments/generate", {
+                    method: "POST",
+                    body: JSON.stringify({ assessment_type: "weekly" }),
+                  });
+                  loadData();
+                } catch (error) {
+                  console.error("Failed to generate assessment:", error);
+                }
+              }}
+              className="px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
+            >
+              生成评估报告
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
@@ -69,45 +153,57 @@ export function LearningAssessment() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-xl p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">每周学习数据</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={weeklyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fill: "#6b7280", fontSize: 12 }} />
-              <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                }}
-              />
-              <Legend />
-              <Bar dataKey="学习时长" fill="#10b981" radius={[8, 8, 0, 0]} />
-              <Bar dataKey="完成任务" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {weeklyData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={weeklyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fill: "#6b7280", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="学习时长" fill="#10b981" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="平均分数" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-500">
+              暂无数据
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">学习进度趋势</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={progressData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="month" tick={{ fill: "#6b7280", fontSize: 12 }} />
-              <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="进度" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: "#10b981" }} />
-            </LineChart>
-          </ResponsiveContainer>
+          {weeklyData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={weeklyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fill: "#6b7280", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                  }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="平均分数" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: "#10b981" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-500">
+              暂无数据
+            </div>
+          )}
         </div>
       </div>
 
@@ -147,14 +243,16 @@ export function LearningAssessment() {
         </div>
 
         <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">AI 智能建议</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">学习洞察</h3>
           <div className="space-y-4">
             <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl">
               <div className="flex items-start gap-3">
                 <span className="text-2xl">💪</span>
                 <div>
                   <p className="text-sm font-semibold text-emerald-900 mb-1">保持优势</p>
-                  <p className="text-sm text-emerald-700">你在编程和算法方面表现出色，继续保持每日练习的习惯。</p>
+                  <p className="text-sm text-emerald-700">
+                    你的平均分数达到 {assessment.average_score.toFixed(0)} 分，表现优秀！
+                  </p>
                 </div>
               </div>
             </div>
@@ -162,8 +260,10 @@ export function LearningAssessment() {
               <div className="flex items-start gap-3">
                 <span className="text-2xl">🎯</span>
                 <div>
-                  <p className="text-sm font-semibold text-blue-900 mb-1">提升重点</p>
-                  <p className="text-sm text-blue-700">建议增加数据库相关学习时间，平衡各领域发展。</p>
+                  <p className="text-sm font-semibold text-blue-900 mb-1">学习进度</p>
+                  <p className="text-sm text-blue-700">
+                    已完成 {assessment.completed_courses} 门课程，继续保持学习节奏。
+                  </p>
                 </div>
               </div>
             </div>
@@ -171,8 +271,10 @@ export function LearningAssessment() {
               <div className="flex items-start gap-3">
                 <span className="text-2xl">⚡</span>
                 <div>
-                  <p className="text-sm font-semibold text-purple-900 mb-1">学习节奏</p>
-                  <p className="text-sm text-purple-700">你的学习专注度很高，注意适当休息，保持可持续发展。</p>
+                  <p className="text-sm font-semibold text-purple-900 mb-1">学习专注度</p>
+                  <p className="text-sm text-purple-700">
+                    专注度 {assessment.focus_rate?.toFixed(0) || 0}%，注意适当休息。
+                  </p>
                 </div>
               </div>
             </div>
@@ -180,8 +282,10 @@ export function LearningAssessment() {
               <div className="flex items-start gap-3">
                 <span className="text-2xl">📈</span>
                 <div>
-                  <p className="text-sm font-semibold text-orange-900 mb-1">进步显著</p>
-                  <p className="text-sm text-orange-700">本月各项指标均有提升，保持这个势头！</p>
+                  <p className="text-sm font-semibold text-orange-900 mb-1">正确率</p>
+                  <p className="text-sm text-orange-700">
+                    练习正确率 {assessment.correct_rate?.toFixed(0) || 0}%，继续加油！
+                  </p>
                 </div>
               </div>
             </div>
