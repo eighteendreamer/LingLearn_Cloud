@@ -49,8 +49,8 @@ export function LearningPath() {
     (profile?.scores.length ? profile.scores : []).map((score) => [score.name, Math.round(score.score)])
   ) as Record<string, number>;
 
-  const profileEntries = Object.entries(studentProfile).length > 0
-    ? Object.entries(studentProfile)
+  const profileEntries: Array<[string, number]> = Object.entries(studentProfile).length > 0
+    ? (Object.entries(studentProfile) as Array<[string, number]>)
     : [
         ["编程基础", 78],
         ["算法思维", 72],

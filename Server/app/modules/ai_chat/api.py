@@ -5,18 +5,19 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DBSession
 from app.core.response import success
+from app.infra.ai.agent_manager import AgentManager
+from app.infra.ai.agent_skills import list_skills
 from app.modules.ai_chat.schemas import (
     AIChatMessageSendRequest,
     AIChatSessionCreateRequest,
-    LearningPathWorkflowRequest,
     LearningEvaluationWorkflowRequest,
+    LearningPathWorkflowRequest,
     MonthlyReportWorkflowRequest,
     ResourceGenerationWorkflowRequest,
     StudyPlanWorkflowRequest,
     StudentProfileWorkflowRequest,
     TutorQAWorkflowRequest,
 )
-from app.infra.ai.agent_manager import AgentManager
 from app.modules.ai_chat.service import AIChatService
 from app.modules.learning_path.schemas import LearningPathGenerateRequest, SkillProfileGenerateRequest
 from app.modules.learning_path.service import LearningPathService
@@ -30,35 +31,15 @@ async def list_ai_agents():
     return success(
         data=[
             {
-                "code": "user_interaction",
-                "name": "用户交互智能体",
-                "responsibilities": ["多轮对话交互", "流式输出展示", "资源收藏管理"],
-            },
-            {
-                "code": "feature_extraction",
-                "name": "特征抽取智能体",
-                "responsibilities": ["对话内容分析", "六维态内容生成", "画像质量校验"],
-            },
-            {
-                "code": "resource_generation",
-                "name": "资源生成智能体",
-                "responsibilities": ["学习目标分析", "路径智能规划", "动态调整优化"],
-            },
-            {
-                "code": "study_plan",
-                "name": "学习计划智能体",
-                "responsibilities": ["自动批改评分", "掌握度判定", "学习报告生成"],
-            },
-            {
-                "code": "tutor_qa",
-                "name": "智能答疑智能体",
-                "responsibilities": ["多轮对话答疑", "思维引导辅导", "错题讲题分析"],
-            },
-            {
-                "code": "learning_evaluation",
-                "name": "学习评估智能体",
-                "responsibilities": ["学习效果诊断", "学情画像生成", "迭代优化建议"],
-            },
+                "code": skill.code,
+                "name": skill.name,
+                "summary": skill.summary,
+                "responsibilities": list(skill.responsibilities),
+                "supported_tools": list(skill.supported_tools),
+                "chat_enabled": skill.chat_enabled,
+                "standalone_enabled": skill.standalone_enabled,
+            }
+            for skill in list_skills()
         ]
     )
 
@@ -68,7 +49,6 @@ async def list_chat_sessions(
     current_user: CurrentUser,
     session: DBSession,
 ):
-    """List user's AI chat sessions"""
     service = AIChatService()
     result = await service.list_user_sessions(session, int(current_user.sub))
     return success(data=result)
@@ -80,7 +60,6 @@ async def create_chat_session(
     current_user: CurrentUser,
     session: DBSession,
 ):
-    """Create a new AI chat session"""
     service = AIChatService()
     result = await service.create_session(session, int(current_user.sub), payload)
     return success(data=result, message="Chat session created.")
@@ -92,7 +71,6 @@ async def list_session_messages(
     current_user: CurrentUser,
     session: DBSession,
 ):
-    """Get all messages in a chat session"""
     service = AIChatService()
     result = await service.list_session_messages(session, int(current_user.sub), session_id)
     return success(data=result)
@@ -105,7 +83,6 @@ async def send_message(
     current_user: CurrentUser,
     session: DBSession,
 ):
-    """Send a message to AI assistant and get response"""
     service = AIChatService()
     result = await service.send_message(session, int(current_user.sub), session_id, payload)
     return success(data=result)
@@ -118,7 +95,6 @@ async def stream_message(
     current_user: CurrentUser,
     session: DBSession,
 ):
-    """Send a message and stream assistant tokens as Server-Sent Events."""
     service = AIChatService()
 
     async def event_stream():

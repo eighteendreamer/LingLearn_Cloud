@@ -1,7 +1,10 @@
 import { defineConfig, loadEnv } from "vite";
-import path from "path";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+
+const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
 function figmaAssetResolver() {
   return {
@@ -9,7 +12,7 @@ function figmaAssetResolver() {
     resolveId(id: string) {
       if (id.startsWith("figma:asset/")) {
         const filename = id.replace("figma:asset/", "");
-        return path.resolve(__dirname, "src/assets", filename);
+        return resolve(rootDir, "src/assets", filename);
       }
       return undefined;
     },
@@ -17,7 +20,7 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, __dirname, "");
+  const env = loadEnv(mode, rootDir, "");
 
   return {
     plugins: [
@@ -27,7 +30,7 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "./src"),
+        "@": resolve(rootDir, "./src"),
       },
     },
     server: {

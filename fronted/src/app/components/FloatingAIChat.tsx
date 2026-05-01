@@ -11,6 +11,7 @@ import {
 import { ApiError, apiRequest } from "../lib/api";
 import { streamAIChatMessage } from "../lib/ai-chat";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { usePageContext } from "../page-context";
 import type {
   AIChatSessionResponse,
   AIChatMessageResponse,
@@ -24,6 +25,7 @@ interface Message {
 }
 
 export function FloatingAIChat() {
+  const pageContext = usePageContext();
   const [isOpen, setIsOpen] = useState(false);
   const [currentSession, setCurrentSession] = useState<AIChatSessionResponse | null>(null);
   const [messages, setMessages] = useState<Message[]>([
@@ -124,6 +126,7 @@ export function FloatingAIChat() {
       await streamAIChatMessage(currentSession.id, {
         content: userInput,
         stream: true,
+        page_context: pageContext,
       }, {
         onDelta: (content) => {
           setMessages((prev) =>

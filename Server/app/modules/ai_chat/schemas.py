@@ -41,6 +41,7 @@ class AIChatSessionCreateRequest(BaseModel):
 class AIChatMessageSendRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
     stream: bool = Field(False, description="Enable streaming response")
+    page_context: dict = Field(default_factory=dict, description="Current frontend page context")
 
 
 class StudentProfileWorkflowRequest(BaseModel):

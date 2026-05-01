@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 
 interface MarkdownMessageProps {
   content: string;
@@ -6,7 +7,32 @@ interface MarkdownMessageProps {
 }
 
 function renderInline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
+  const tokens = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*)/g).filter(Boolean);
+  return tokens.map((part, index) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      const [, label, href] = linkMatch;
+      const isInternal = href.startsWith("/");
+      if (isInternal) {
+        return (
+          <Link key={index} to={href} className="font-medium text-emerald-600 underline underline-offset-2">
+            {label}
+          </Link>
+        );
+      }
+      return (
+        <a
+          key={index}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-emerald-600 underline underline-offset-2"
+        >
+          {label}
+        </a>
+      );
+    }
+
     if (part.startsWith("**") && part.endsWith("**")) {
       return <strong key={index}>{part.slice(2, -2)}</strong>;
     }

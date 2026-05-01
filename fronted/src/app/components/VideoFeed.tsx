@@ -47,6 +47,7 @@ import type {
   ContentQuizResponse,
   ContentVideoResponse,
 } from "../lib/types";
+import { usePageContextActions } from "../page-context";
 import {
   Drawer,
   DrawerContent,
@@ -165,6 +166,7 @@ function buildCommentThreads(items: ContentCommentResponse[]): CommentThread[] {
 }
 
 export function VideoFeed() {
+  const { updatePageContext } = usePageContextActions();
   const currentSession = getStoredSession();
   const currentUserId = currentSession?.userId ?? null;
   const currentUserDisplayName = currentSession?.currentUser?.profile.display_name ?? "我";
@@ -244,6 +246,84 @@ export function VideoFeed() {
     ? interactionState[currentVideo.id] ?? buildInitialInteractionState(currentVideo)
     : null;
   const commentThreads = useMemo(() => buildCommentThreads(comments), [comments]);
+
+  useEffect(() => {
+    const currentVideoTitle = currentVideo?.title?.trim() || "当前视频";
+    const titleParam = currentVideo ? encodeURIComponent(currentVideo.title) : "";
+    const categoryParam = currentVideo?.category?.name ? encodeURIComponent(currentVideo.category.name) : "";
+    const contentIdParam = currentVideo?.id ? `content_id=${currentVideo.id}` : "";
+    const sourceQuery = currentVideo
+      ? [contentIdParam, `title=${titleParam}`, categoryParam ? `category=${categoryParam}` : "", "source=video"]
+          .filter(Boolean)
+          .join("&")
+      : "source=video";
+
+    updatePageContext({
+      page_type: "home_feed",
+      page_title: "首页视频流",
+      summary: currentVideo
+        ? `当前正在浏览视频《${currentVideoTitle}》，可以围绕视频主题继续答疑、生成练习、规划学习路径。`
+        : "正在浏览首页推荐视频流。",
+      current_video: currentVideo
+        ? {
+            content_id: currentVideo.id,
+            title: currentVideo.title,
+            summary: currentVideo.summary,
+            category_name: currentVideo.category?.name ?? null,
+            author_name: currentVideo.author.display_name,
+            hashtags: currentVideo.hashtags ?? [],
+            has_quiz: currentVideo.has_quiz,
+            quiz_count: currentVideo.quiz_count,
+            duration_seconds: currentVideo.duration_seconds,
+            video_url: currentVideo.video_url,
+          }
+        : null,
+      available_actions: currentVideo
+        ? [
+            {
+              id: "explain-current-video",
+              label: "解析当前视频知识点",
+              description: "根据当前播放视频提炼重点知识点和学习建议。",
+              type: "analyze",
+            },
+            {
+              id: "generate-video-practice",
+              label: "生成视频同主题练习",
+              description: "围绕当前视频主题生成在线学习题库并跳转到练习页。",
+              type: "generate",
+              href: `/practice?${sourceQuery}`,
+            },
+            {
+              id: "build-video-learning-path",
+              label: "生成配套学习路径",
+              description: "基于当前视频主题延伸生成下一步学习路线。",
+              type: "navigate",
+              href: `/learning-path?${sourceQuery}`,
+            },
+            {
+              id: "evaluate-video-topic",
+              label: "评估该主题掌握度",
+              description: "围绕当前视频所属知识主题给出学习评估建议。",
+              type: "navigate",
+              href: `/assessment?${sourceQuery}`,
+            },
+          ]
+        : [
+            {
+              id: "ask-current-video",
+              label: "解析当前视频",
+              description: "基于当前视频内容做知识点拆解和总结。",
+              type: "analyze",
+            },
+          ],
+      metadata: {
+        section: "feed",
+        feed_mode: feedMode,
+        current_index: currentIndex,
+        visible_video_count: filteredVideos.length,
+      },
+    });
+  }, [currentIndex, currentVideo, feedMode, filteredVideos.length, updatePageContext]);
 
   const syncVideoDerivedState = (items: ContentVideoResponse[]) => {
     setResolvedDurations(

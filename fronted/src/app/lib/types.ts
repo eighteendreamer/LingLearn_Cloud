@@ -580,4 +580,36 @@ export interface AIChatSessionCreatePayload {
 export interface AIChatMessageSendPayload {
   content: string;
   stream?: boolean;
+  page_context?: AIChatPageContext;
+}
+
+export interface AIChatPageAction {
+  id: string;
+  label: string;
+  description?: string | null;
+  type: "navigate" | "generate" | "analyze" | "recommend";
+  href?: string | null;
+}
+
+export interface AIChatCurrentVideoContext {
+  content_id: number;
+  title: string;
+  summary?: string | null;
+  category_name?: string | null;
+  author_name?: string | null;
+  hashtags?: string[];
+  has_quiz?: boolean;
+  quiz_count?: number;
+  duration_seconds?: number | null;
+  video_url?: string | null;
+}
+
+export interface AIChatPageContext {
+  route: string;
+  page_type: string;
+  page_title: string;
+  summary?: string | null;
+  current_video?: AIChatCurrentVideoContext | null;
+  available_actions: AIChatPageAction[];
+  metadata?: Record<string, any>;
 }
