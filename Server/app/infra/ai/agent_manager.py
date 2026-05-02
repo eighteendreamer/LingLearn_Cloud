@@ -20,6 +20,7 @@ from app.infra.ai.agent_skills import (
     STUDY_PLAN_SKILL,
     TUTOR_QA_SKILL,
     USER_INTERACTION_SKILL,
+    VIDEO_CONTENT_SKILL,
 )
 from app.infra.ai.agent_tools import default_tool_keys_for_skill
 from app.infra.ai.context_builder import UserLearningContextBuilder
@@ -37,7 +38,9 @@ from app.infra.ai.graphs.six_agents import (
     UserInteractionAgent,
     UserInteractionState,
 )
+from app.infra.ai.graphs.video_content_graph import VideoContentAgent, VideoContentState
 from app.infra.ai.langgraph_runtime import LangGraphRuntime
+from app.infra.ai.video_content_analyzer import VideoContentAnalyzer
 from app.modules.ai_chat.workflow_models import AIWorkflowRun
 
 logger = logging.getLogger(__name__)
@@ -65,9 +68,11 @@ class AgentManager:
         self.context_builder = UserLearningContextBuilder()
         self.agent_data_builder = AgentDatabaseContextBuilder()
         self.session_factory = get_session_factory()
+        self.video_content_analyzer = VideoContentAnalyzer()
 
         self.user_interaction_agent = UserInteractionAgent(self.llm)
         self.feature_extraction_agent = FeatureExtractionAgent(self.llm)
+        self.video_content_agent = VideoContentAgent(self.llm, self.video_content_analyzer)
         self.resource_generation_agent = ResourceGenerationAgent(self.llm)
         self.study_plan_agent = StudyPlanAgent(self.llm)
         self.tutor_qa_agent = TutorQAAgent(self.llm)
@@ -369,6 +374,53 @@ class AgentManager:
             },
         )
 
+    async def run_video_content_agent(
+        self,
+        db_session: AsyncSession,
+        *,
+        user_id: int,
+        video_url: str,
+        request_text: str,
+        video_title: str | None = None,
+        video_summary: str | None = None,
+        page_context: dict[str, Any] | None = None,
+    ) -> VideoContentState:
+        state: VideoContentState = {
+            "user_id": user_id,
+            "video_url": video_url,
+            "video_title": video_title or "",
+            "video_summary": video_summary or "",
+            "request_text": request_text,
+            "page_context": page_context or {},
+            "transcript": "",
+            "visual_analysis": "",
+            "frame_count": 0,
+            "video_duration_seconds": None,
+            "generated_output": "",
+            "suggested_actions": [],
+            "status": "init",
+        }
+        return await self._execute_agent(
+            db_session,
+            workflow_type="agent_video_content",
+            user_id=user_id,
+            biz_type="video_understanding",
+            biz_id=None,
+            input_json={
+                "video_url": video_url,
+                "request_text": request_text,
+                "video_title": video_title,
+            },
+            agent_run=lambda: self.video_content_agent.run(state),
+            output_builder=lambda result: {
+                "transcript": result["transcript"],
+                "visual_analysis": result["visual_analysis"],
+                "frame_count": result["frame_count"],
+                "generated_output": result["generated_output"],
+                "suggested_actions": result["suggested_actions"],
+            },
+        )
+
     async def run_tutor_chat(
         self,
         db_session: AsyncSession,
@@ -559,6 +611,32 @@ class AgentManager:
                 "path_plan": result["path_plan"],
                 "generated_content": result["generated_content"],
                 "adjustments": result["adjustments"],
+            }
+
+        if skill_code == VIDEO_CONTENT_SKILL.code:
+            page_context = interaction_state.get("context", {}).get("page_context")
+            current_video = page_context.get("current_video") if isinstance(page_context, dict) else None
+            if not isinstance(current_video, dict) or not current_video.get("video_url"):
+                return {
+                    "tool_context": tool_context,
+                    "generated_output": "当前页面没有可读取的视频地址，暂时无法执行视频内容理解。",
+                }
+            result = await self.run_video_content_agent(
+                db_session,
+                user_id=interaction_state["user_id"],
+                video_url=str(current_video.get("video_url") or ""),
+                request_text=latest_user_text or "请总结当前视频内容。",
+                video_title=str(current_video.get("title") or ""),
+                video_summary=str(current_video.get("summary") or ""),
+                page_context=page_context,
+            )
+            return {
+                "tool_context": tool_context,
+                "transcript": result["transcript"],
+                "visual_analysis": result["visual_analysis"],
+                "frame_count": result["frame_count"],
+                "generated_output": result["generated_output"],
+                "suggested_actions": result["suggested_actions"],
             }
 
         if skill_code == STUDY_PLAN_SKILL.code:

@@ -168,6 +168,30 @@ AGENT_TOOLS: dict[str, AgentTool] = {
         description="Choose the final response structure, tone, and level of detail.",
         category="orchestration",
     ),
+    "video-frame-extractor": AgentTool(
+        key="video-frame-extractor",
+        name="Video Frame Extractor",
+        description="Extract representative frames from the current video for slide and scene understanding.",
+        category="media",
+    ),
+    "video-audio-transcriber": AgentTool(
+        key="video-audio-transcriber",
+        name="Video Audio Transcriber",
+        description="Extract the audio track and produce a transcript or caption-style summary of the lecture speech.",
+        category="media",
+    ),
+    "video-scene-analyzer": AgentTool(
+        key="video-scene-analyzer",
+        name="Video Scene Analyzer",
+        description="Analyze sampled video frames to read visible text, scenes, and teaching structure.",
+        category="analysis",
+    ),
+    "video-artifact-generator": AgentTool(
+        key="video-artifact-generator",
+        name="Video Artifact Generator",
+        description="Turn extracted video content into downstream artifacts such as quiz ideas, reports, summaries, or study notes.",
+        category="generation",
+    ),
 }
 
 
@@ -219,6 +243,13 @@ SKILL_TOOL_MAPPING: dict[str, tuple[str, ...]] = {
         "learning-path-reader",
         "learner-portrait-writer",
         "optimization-suggester",
+    ),
+    "video_content": (
+        "page-context-reader",
+        "video-frame-extractor",
+        "video-audio-transcriber",
+        "video-scene-analyzer",
+        "video-artifact-generator",
     ),
 }
 

@@ -17,6 +17,7 @@ from app.modules.ai_chat.schemas import (
     StudyPlanWorkflowRequest,
     StudentProfileWorkflowRequest,
     TutorQAWorkflowRequest,
+    VideoContentWorkflowRequest,
 )
 from app.modules.ai_chat.service import AIChatService
 from app.modules.learning_path.schemas import LearningPathGenerateRequest, SkillProfileGenerateRequest
@@ -218,3 +219,22 @@ async def run_learning_evaluation_workflow(
         path_progress=payload.path_progress,
     )
     return success(data=result, message="Learning evaluation agent completed.")
+
+
+@router.post("/ai/workflows/video-content")
+async def run_video_content_workflow(
+    payload: VideoContentWorkflowRequest,
+    current_user: CurrentUser,
+    session: DBSession,
+):
+    manager = AgentManager()
+    result = await manager.run_video_content_agent(
+        session,
+        user_id=int(current_user.sub),
+        video_url=payload.video_url,
+        request_text=payload.request_text,
+        video_title=payload.video_title,
+        video_summary=payload.video_summary,
+        page_context=payload.page_context,
+    )
+    return success(data=result, message="Video content agent completed.")

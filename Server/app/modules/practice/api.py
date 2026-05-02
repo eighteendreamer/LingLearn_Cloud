@@ -5,6 +5,7 @@ from app.core.response import success
 from app.modules.practice.schemas import (
     PracticeAnswerSubmitRequest,
     PracticeSessionCreateRequest,
+    VideoPracticeGenerateRequest,
 )
 from app.modules.practice.service import PracticeService
 
@@ -42,6 +43,21 @@ async def create_practice_session(
         session,
         user_id=int(current_user.sub),
         payload=payload,
+    )
+    return success(data=data.model_dump(mode="json"))
+
+
+@router.get("/sessions/{session_id}")
+async def get_practice_session(
+    session_id: int,
+    session: DBSession,
+    current_user: CurrentUser,
+):
+    service = PracticeService()
+    data = await service.get_practice_session(
+        session,
+        user_id=int(current_user.sub),
+        session_id=session_id,
     )
     return success(data=data.model_dump(mode="json"))
 
@@ -89,5 +105,20 @@ async def get_session_result(
         session,
         user_id=int(current_user.sub),
         session_id=session_id,
+    )
+    return success(data=data.model_dump(mode="json"))
+
+
+@router.post("/video-generate")
+async def generate_video_practice(
+    payload: VideoPracticeGenerateRequest,
+    session: DBSession,
+    current_user: CurrentUser,
+):
+    service = PracticeService()
+    data = await service.generate_video_practice(
+        session,
+        user_id=int(current_user.sub),
+        payload=payload,
     )
     return success(data=data.model_dump(mode="json"))

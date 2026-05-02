@@ -4,11 +4,14 @@ import type {
   MonthlyReportResponse,
   PracticeAnswerResponse,
   PracticeQuestionResponse,
+  PracticeSessionResponse,
   PracticeSessionResultResponse,
   PracticeSessionSubmitResponse,
   QuestionBankResponse,
   SkillSnapshotResponse,
   UserLearningPathResponse,
+  VideoPracticeGeneratePayload,
+  VideoPracticeGenerateResponse,
 } from "./types";
 
 export async function fetchQuestionBanks() {
@@ -26,8 +29,19 @@ export async function submitPracticeSession(sessionId: number) {
   });
 }
 
+export async function fetchPracticeSession(sessionId: number) {
+  return apiRequest<PracticeSessionResponse>(`/practice/sessions/${sessionId}`);
+}
+
 export async function fetchPracticeResult(sessionId: number) {
   return apiRequest<PracticeSessionResultResponse>(`/practice/sessions/${sessionId}/result`);
+}
+
+export async function generateVideoPractice(payload: VideoPracticeGeneratePayload) {
+  return apiRequest<VideoPracticeGenerateResponse>("/practice/video-generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function normalizePracticeAnswer(response: PracticeAnswerResponse): PracticeAnswerResponse {

@@ -18,6 +18,8 @@ from app.modules.ai_chat.schemas import (
     AIChatSessionCreateRequest,
     AIChatSessionResponse,
 )
+from app.modules.practice.schemas import VideoPracticeGenerateRequest
+from app.modules.practice.service import PracticeService
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +168,9 @@ class AIChatService:
             created_at=now,
         )
 
+        normalized_page_context = payload.page_context if isinstance(payload.page_context, dict) else {}
+        inferred_route = self._infer_specialized_route(payload.content, normalized_page_context)
+
         yield {"type": "start"}
         yield {"type": "delta", "content": "正在分析你的需求...\n\n"}
 
@@ -175,7 +180,7 @@ class AIChatService:
                 user_id=user_id,
                 session_id=session_id,
                 scene_code=chat_session.scene_code or "study_assistant",
-                page_context=payload.page_context,
+                page_context=normalized_page_context,
             )
         )
 
@@ -184,7 +189,10 @@ class AIChatService:
             await asyncio.sleep(0.25)
             if not yielded_route_hint:
                 yielded_route_hint = True
-                yield {"type": "delta", "content": "正在调用对应智能体处理，请稍等...\n\n"}
+                yield {
+                    "type": "delta",
+                    "content": f"正在调用{self._route_display_name(inferred_route)}处理，请稍等...\n\n",
+                }
 
         try:
             content = await task
@@ -255,6 +263,32 @@ class AIChatService:
             for item in messages[-10:]
         ]
 
+        if self._page_context_prefers_video_practice(latest_user_text, normalized_page_context):
+            try:
+                practice_response = await self._generate_video_practice_response(
+                    session,
+                    user_id=user_id,
+                    latest_user_text=latest_user_text,
+                    page_context=normalized_page_context,
+                )
+                if practice_response:
+                    return practice_response
+            except Exception:
+                logger.exception("Video practice direct route failed: session_id=%s user_id=%s", session_id, user_id)
+
+        if self._page_context_prefers_video_content(latest_user_text, normalized_page_context):
+            try:
+                video_response = await self._generate_video_content_response(
+                    session,
+                    user_id=user_id,
+                    latest_user_text=latest_user_text,
+                    page_context=normalized_page_context,
+                )
+                if video_response:
+                    return self._append_page_context_markdown(video_response, normalized_page_context)
+            except Exception:
+                logger.exception("Video content agent direct route failed: session_id=%s user_id=%s", session_id, user_id)
+
         try:
             result = await asyncio.wait_for(
                 self.agent_manager.run_tutor_chat(
@@ -284,7 +318,7 @@ class AIChatService:
         if result.get("messages"):
             content = str(result["messages"][-1].content or "").strip()
             if content:
-                return self._append_page_context_markdown(content, normalized_page_context)
+                return content
 
         specialized = await self._generate_specialized_fallback_response(
             session,
@@ -312,6 +346,22 @@ class AIChatService:
     ) -> str | None:
         route = self._infer_specialized_route(latest_user_text, page_context)
         try:
+            if route == "video_practice":
+                return await self._generate_video_practice_response(
+                    session,
+                    user_id=user_id,
+                    latest_user_text=latest_user_text,
+                    page_context=page_context,
+                )
+
+            if route == "video_content":
+                return await self._generate_video_content_response(
+                    session,
+                    user_id=user_id,
+                    latest_user_text=latest_user_text,
+                    page_context=page_context,
+                )
+
             if route == "resource_generation":
                 result = await self.agent_manager.run_resource_generation_agent(
                     session,
@@ -377,6 +427,10 @@ class AIChatService:
     @staticmethod
     def _infer_specialized_route(text: str, page_context: dict[str, object] | None = None) -> str:
         normalized = (text or "").lower()
+        if AIChatService._page_context_prefers_video_practice(normalized, page_context):
+            return "video_practice"
+        if AIChatService._page_context_prefers_video_content(normalized, page_context):
+            return "video_content"
         if AIChatService._page_context_prefers_resource_generation(normalized, page_context):
             return "resource_generation"
         if any(keyword in normalized for keyword in ("????", "????", "??", "??", "??", "??", "??", "quiz", "practice")):
@@ -388,6 +442,18 @@ class AIChatService:
         return "tutor_qa"
 
     @staticmethod
+    def _route_display_name(route: str) -> str:
+        mapping = {
+            "video_practice": "视频练习智能体",
+            "video_content": "视频内容智能体",
+            "resource_generation": "资源生成智能体",
+            "study_plan": "学习规划智能体",
+            "learning_evaluation": "学习评估智能体",
+            "tutor_qa": "答疑辅导智能体",
+        }
+        return mapping.get(route, "学习助手")
+
+    @staticmethod
     def _page_context_prefers_resource_generation(text: str, page_context: dict[str, object] | None = None) -> bool:
         if not isinstance(page_context, dict) or not page_context:
             return False
@@ -397,6 +463,132 @@ class AIChatService:
         page_keywords = ("????", "????", "????", "????", "???", "???", "????", "????", "?????", "?????")
         action_keywords = ("??", "??", "quiz", "practice", "????", "????", "??", "??", "????", "??", "??", "??")
         return any(keyword in text for keyword in page_keywords) and any(keyword in text for keyword in action_keywords)
+
+    @staticmethod
+    def _page_context_prefers_video_practice(text: str, page_context: dict[str, object] | None = None) -> bool:
+        if not isinstance(page_context, dict) or not page_context:
+            return False
+        current_video = page_context.get("current_video")
+        if not isinstance(current_video, dict) or not current_video.get("video_url"):
+            return False
+        normalized = (text or "").lower()
+        practice_keywords = (
+            "练习",
+            "题目",
+            "出题",
+            "题库",
+            "刷题",
+            "测验",
+            "quiz",
+            "practice",
+            "question",
+            "questions",
+        )
+        return any(keyword in normalized for keyword in practice_keywords)
+
+    @staticmethod
+    def _page_context_prefers_video_content(text: str, page_context: dict[str, object] | None = None) -> bool:
+        if not isinstance(page_context, dict) or not page_context:
+            return False
+        current_video = page_context.get("current_video")
+        if not isinstance(current_video, dict) or not current_video.get("video_url"):
+            return False
+        return any(
+            keyword in (text or "")
+            for keyword in (
+                "视频",
+                "当前视频",
+                "画面",
+                "语音",
+                "讲解",
+                "总结",
+                "报告",
+                "笔记",
+                "题库",
+                "练习",
+                "quiz",
+                "summary",
+                "report",
+            )
+        )
+
+    async def _generate_video_content_response(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        latest_user_text: str,
+        page_context: dict[str, object] | None = None,
+    ) -> str | None:
+        if not isinstance(page_context, dict):
+            return None
+        current_video = page_context.get("current_video")
+        if not isinstance(current_video, dict):
+            return None
+
+        video_url = str(current_video.get("video_url") or "").strip()
+        if not video_url:
+            return None
+
+        result = await self.agent_manager.run_video_content_agent(
+            session,
+            user_id=user_id,
+            video_url=video_url,
+            request_text=latest_user_text or "请总结当前视频内容。",
+            video_title=str(current_video.get("title") or ""),
+            video_summary=str(current_video.get("summary") or ""),
+            page_context=page_context,
+        )
+        content = self._extract_text(result.get("generated_output"))
+        transcript = self._extract_text(result.get("transcript"))
+        visual_analysis = self._extract_text(result.get("visual_analysis"))
+        if content:
+            if self._should_append_video_evidence(latest_user_text):
+                return self._combine_markdown_sections(content, visual_analysis, transcript)
+            return content
+        fallback = self._combine_markdown_sections(visual_analysis, transcript)
+        return fallback or None
+
+    async def _generate_video_practice_response(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        latest_user_text: str,
+        page_context: dict[str, object] | None = None,
+    ) -> str | None:
+        if not isinstance(page_context, dict):
+            return None
+        current_video = page_context.get("current_video")
+        if not isinstance(current_video, dict):
+            return None
+
+        video_url = str(current_video.get("video_url") or "").strip()
+        if not video_url:
+            return None
+
+        practice_service = PracticeService()
+        result = await practice_service.generate_video_practice(
+            session,
+            user_id=user_id,
+            payload=VideoPracticeGenerateRequest(
+                page_context=page_context,
+                request_text=latest_user_text or "请基于当前视频生成一套可直接作答的练习题。",
+                question_count=6,
+                session_type="practice",
+            ),
+        )
+
+        bank = result.bank
+        practice_session = result.session
+        title = str(current_video.get("title") or bank.title).strip() or bank.title
+        return (
+            f"已根据《{title}》生成并保存一套练习题。\n\n"
+            f"- 题库：**{bank.title}**\n"
+            f"- 题目数：{bank.question_count}\n"
+            f"- 难度：{bank.difficulty}\n\n"
+            f"[开始练习](/practice?bank_id={bank.id}&session_id={practice_session.id})"
+        )
 
     @staticmethod
     def _build_page_tool_context(page_context: dict[str, object] | None = None) -> dict[str, object]:
@@ -451,10 +643,36 @@ class AIChatService:
         return "\n\n".join(chunks) if chunks else ""
 
     @staticmethod
+    def _should_append_video_evidence(text: str) -> bool:
+        normalized = (text or "").lower()
+        keywords = (
+            "transcript",
+            "audio",
+            "speech",
+            "frame",
+            "ocr",
+            "evidence",
+            "原文",
+            "逐字",
+            "转写",
+            "语音",
+            "画面",
+            "截图",
+        )
+        return any(keyword in normalized for keyword in keywords)
+
+    @staticmethod
     def _append_page_context_markdown(content: str, page_context: dict[str, object]) -> str:
         if not isinstance(page_context, dict) or not page_context:
             return content
-        if "## 当前页面" in (content or ""):
+        existing_content = content or ""
+        if (
+            "## 当前页面" in existing_content
+            or "## Current Page" in existing_content
+            or "## Current Content" in existing_content
+            or "## You Can Continue With" in existing_content
+            or "## 你现在还可以继续" in existing_content
+        ):
             return content
 
         blocks: list[str] = [content.strip()]

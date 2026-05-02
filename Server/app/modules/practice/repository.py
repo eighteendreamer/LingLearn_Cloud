@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.utils import utc_now_naive
+from app.modules.content.models import ContentCategory
 from app.modules.practice.models import (
     PracticeAnswer,
     PracticeSession,
@@ -101,6 +102,84 @@ class PracticeRepository:
         await session.refresh(practice_session)
         return practice_session
 
+    async def create_question_bank(
+        self,
+        session: AsyncSession,
+        *,
+        title: str,
+        description: str | None,
+        category_id: int | None,
+        difficulty: str,
+        question_count: int,
+        created_by: int,
+    ) -> QuestionBank:
+        bank = QuestionBank(
+            title=title,
+            description=description,
+            category_id=category_id,
+            bank_type="practice",
+            difficulty=difficulty,
+            question_count=question_count,
+            status="published",
+            created_by=created_by,
+        )
+        session.add(bank)
+        await session.flush()
+        await session.refresh(bank)
+        return bank
+
+    async def create_question(
+        self,
+        session: AsyncSession,
+        *,
+        bank_id: int,
+        category_id: int | None,
+        question_type: str,
+        content: str,
+        explanation: str | None,
+        correct_answer_text: str | None,
+        difficulty: str,
+        sort_order: int,
+    ) -> Question:
+        question = Question(
+            bank_id=bank_id,
+            category_id=category_id,
+            question_type=question_type,
+            content=content,
+            explanation=explanation,
+            correct_answer_text=correct_answer_text,
+            difficulty=difficulty,
+            status="published",
+            sort_order=sort_order,
+        )
+        session.add(question)
+        await session.flush()
+        await session.refresh(question)
+        return question
+
+    async def create_question_option(
+        self,
+        session: AsyncSession,
+        *,
+        question_id: int,
+        option_key: str,
+        content: str,
+        is_correct: bool,
+        sort_order: int,
+    ) -> QuestionOption:
+        option = QuestionOption(
+            question_id=question_id,
+            option_key=option_key,
+            content=content,
+            is_correct=is_correct,
+            sort_order=sort_order,
+            created_at=utc_now_naive(),
+        )
+        session.add(option)
+        await session.flush()
+        await session.refresh(option)
+        return option
+
     async def get_practice_session_by_id(
         self,
         session: AsyncSession,
@@ -182,3 +261,18 @@ class PracticeRepository:
         
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def find_category_by_name(
+        self,
+        session: AsyncSession,
+        name: str,
+    ) -> ContentCategory | None:
+        normalized = (name or "").strip()
+        if not normalized:
+            return None
+        result = await session.execute(
+            select(ContentCategory)
+            .where(ContentCategory.name == normalized)
+            .where(ContentCategory.status == "active")
+        )
+        return result.scalar_one_or_none()

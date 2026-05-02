@@ -55,6 +55,20 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(...)
     llm_timeout_seconds: int = Field(...)
 
+    video_audio_api_key: str = Field(default="")
+    video_audio_model: str = Field(default="qwen3-omni-30b-a3b-captioner")
+    video_audio_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    video_audio_timeout_seconds: int = Field(default=120)
+
+    video_vision_api_key: str = Field(default="")
+    video_vision_model: str = Field(default="Qwen/Qwen3.5-122B-A10B")
+    video_vision_base_url: str = Field(default="https://api-inference.modelscope.cn/v1")
+    video_vision_timeout_seconds: int = Field(default=120)
+
+    video_extract_max_frames: int = Field(default=6)
+    video_extract_interval_seconds: int = Field(default=20)
+    video_extract_audio_format: str = Field(default="mp3")
+
     docs_url: str = Field(...)
     redoc_url: str = Field(...)
     openapi_url: str = Field(...)

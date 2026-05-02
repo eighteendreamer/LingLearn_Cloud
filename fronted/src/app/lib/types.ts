@@ -375,6 +375,18 @@ export interface PracticeSessionCreatePayload {
   session_type: string;
 }
 
+export interface VideoPracticeGeneratePayload {
+  page_context: AIChatPageContext;
+  request_text?: string;
+  question_count?: number;
+  session_type?: string;
+}
+
+export interface VideoPracticeGenerateResponse {
+  bank: QuestionBankResponse;
+  session: PracticeSessionResponse;
+}
+
 export interface PracticeAnswerSubmitPayload {
   question_id: number;
   selected_option_ids: number[];

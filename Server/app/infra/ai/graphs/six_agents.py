@@ -20,6 +20,7 @@ from app.infra.ai.agent_skills import (
     STUDY_PLAN_SKILL,
     TUTOR_QA_SKILL,
     USER_INTERACTION_SKILL,
+    VIDEO_CONTENT_SKILL,
     build_chat_router_skill_catalog,
 )
 from app.infra.ai.agent_tools import default_tool_keys_for_skill
@@ -101,6 +102,8 @@ def _sanitize_tool_plan(raw_plan: Any, skill_codes: list[str]) -> dict[str, list
 
 def _fallback_skill_codes(text: str) -> list[str]:
     normalized = (text or "").lower()
+    if any(keyword in normalized for keyword in ("视频", "当前视频", "画面", "语音", "讲解", "frame", "transcript", "summary", "总结", "笔记", "报告")):
+        return [VIDEO_CONTENT_SKILL.code]
     if any(
         keyword in normalized
         for keyword in (
@@ -166,8 +169,40 @@ def _page_context_prefers_resource_generation(
     return any(keyword in normalized for keyword in page_keywords) and any(keyword in normalized for keyword in action_keywords)
 
 
+def _page_context_prefers_video_content(
+    text: str,
+    page_context: dict[str, Any] | None,
+) -> bool:
+    if not isinstance(page_context, dict) or not page_context:
+        return False
+
+    current_video = page_context.get("current_video")
+    if not isinstance(current_video, dict) or not current_video.get("video_url"):
+        return False
+
+    normalized = (text or "").lower()
+    return any(
+        keyword in normalized
+        for keyword in (
+            "视频",
+            "当前视频",
+            "画面",
+            "语音",
+            "讲解",
+            "总结",
+            "报告",
+            "笔记",
+            "题库",
+            "练习",
+            "quiz",
+            "summary",
+            "report",
+        )
+    )
+
+
 def _choose_primary_text(result: dict[str, Any]) -> str:
-    for key in ("answer", "guidance"):
+    for key in ("answer", "guidance", "generated_output"):
         value = result.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -274,7 +309,23 @@ def _format_learning_evaluation_result(result: dict[str, Any]) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _format_video_content_result(result: dict[str, Any]) -> str:
+    parts: list[str] = []
+    transcript = _unwrap_text(result.get("transcript"))
+    visual_analysis = _unwrap_text(result.get("visual_analysis"))
+    generated_output = _unwrap_text(result.get("generated_output"))
+    if generated_output:
+        parts.append(generated_output)
+    if visual_analysis:
+        parts.append(f"## 视频画面理解\n{visual_analysis}")
+    if transcript:
+        parts.append(f"## 讲解语音内容\n{transcript}")
+    return "\n\n".join(parts).strip()
+
+
 def _render_skill_result(skill_code: str, result: dict[str, Any]) -> str:
+    if skill_code == VIDEO_CONTENT_SKILL.code:
+        return _format_video_content_result(result)
     if skill_code == RESOURCE_GENERATION_SKILL.code:
         return _format_resource_generation_result(result)
     if skill_code == STUDY_PLAN_SKILL.code:
@@ -681,6 +732,16 @@ class UserInteractionAgent:
 
         latest_user_text = self._latest_user_text(state)
         page_context = _page_context(state)
+        if _page_context_prefers_video_content(latest_user_text, page_context):
+            selected_skills = [VIDEO_CONTENT_SKILL.code]
+            state["routing_plan"] = {
+                "raw": None,
+                "route_reason": "Page-aware route selected video content understanding based on the current video and requested artifact.",
+            }
+            state["selected_skills"] = selected_skills
+            state["tool_plan"] = _sanitize_tool_plan({}, selected_skills)
+            state["status"] = "skills_routed"
+            return state
         if _page_context_prefers_resource_generation(latest_user_text, page_context):
             selected_skills = [RESOURCE_GENERATION_SKILL.code]
             state["routing_plan"] = {

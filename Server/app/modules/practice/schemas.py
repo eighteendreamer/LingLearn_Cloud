@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QuestionBankListItemResponse(BaseModel):
@@ -71,3 +71,15 @@ class PracticeSessionResultResponse(BaseModel):
     accuracy: float
     submitted_at: datetime
     answers: list[dict]
+
+
+class VideoPracticeGenerateRequest(BaseModel):
+    page_context: dict = Field(default_factory=dict)
+    request_text: str | None = Field(default=None, max_length=5000)
+    question_count: int = Field(default=6, ge=3, le=12)
+    session_type: str = Field(default="practice", max_length=32)
+
+
+class VideoPracticeGenerateResponse(BaseModel):
+    bank: QuestionBankListItemResponse
+    session: PracticeSessionResponse

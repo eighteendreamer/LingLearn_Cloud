@@ -81,3 +81,11 @@ class LearningEvaluationWorkflowRequest(BaseModel):
     month: str | None = Field(None, pattern=r"^\d{4}-\d{2}$")
     learning_data: dict = Field(default_factory=dict)
     path_progress: dict = Field(default_factory=dict)
+
+
+class VideoContentWorkflowRequest(BaseModel):
+    request_text: str = Field(..., min_length=1, max_length=5000)
+    video_url: str = Field(..., min_length=1, max_length=2000)
+    video_title: str | None = Field(default=None, max_length=200)
+    video_summary: str | None = Field(default=None, max_length=1000)
+    page_context: dict = Field(default_factory=dict)

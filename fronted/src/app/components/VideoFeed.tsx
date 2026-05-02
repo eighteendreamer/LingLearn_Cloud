@@ -539,8 +539,19 @@ export function VideoFeed() {
   }, [isMuted]);
 
   useEffect(() => {
+    const isEventInsideFloatingAssistant = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) {
+        return false;
+      }
+      return Boolean(target.closest("[data-floating-ai-chat='true']"));
+    };
+
     const handleWheel = (event: WheelEvent) => {
-      if (!filteredVideos.length || isCommentOpen) {
+      if (
+        !filteredVideos.length ||
+        isCommentOpen ||
+        isEventInsideFloatingAssistant(event.target)
+      ) {
         return;
       }
       event.preventDefault();
@@ -701,11 +712,19 @@ export function VideoFeed() {
   }, [isCommentOpen, currentVideo?.id]);
 
   const handleTouchStart = (event: TouchEvent) => {
+    if (event.target instanceof Element && event.target.closest("[data-floating-ai-chat='true']")) {
+      touchStartY.current = Number.NaN;
+      return;
+    }
     touchStartY.current = event.touches[0].clientY;
   };
 
   const handleTouchEnd = (event: TouchEvent) => {
-    if (isCommentOpen) {
+    if (
+      isCommentOpen ||
+      Number.isNaN(touchStartY.current) ||
+      (event.target instanceof Element && event.target.closest("[data-floating-ai-chat='true']"))
+    ) {
       return;
     }
     const diff = touchStartY.current - event.changedTouches[0].clientY;

@@ -104,10 +104,25 @@ LEARNING_EVALUATION_SKILL = AgentSkill(
     chat_enabled=True,
 )
 
+VIDEO_CONTENT_SKILL = AgentSkill(
+    code="video_content",
+    name="视频内容理解智能体",
+    summary="负责提取视频画面与讲解语音，并按用户目标生成题库、总结、报告等内容。",
+    description="围绕当前视频完成抽帧理解、语音内容提取、知识点整理，以及下游学习产物生成。",
+    responsibilities=("视频画面理解", "讲解语音提取", "题库/总结/报告生成"),
+    supported_tools=tuple(default_tool_keys_for_skill("video_content")),
+    system_prompt=(
+        "你是 LingLearn 的视频内容理解智能体。"
+        "你的职责是读取视频的画面信息和讲解语音，并根据用户需求生成高质量学习内容。"
+    ),
+    chat_enabled=True,
+)
+
 
 AGENT_ORDER = (
     USER_INTERACTION_SKILL.code,
     FEATURE_EXTRACTION_SKILL.code,
+    VIDEO_CONTENT_SKILL.code,
     RESOURCE_GENERATION_SKILL.code,
     STUDY_PLAN_SKILL.code,
     TUTOR_QA_SKILL.code,
@@ -117,6 +132,7 @@ AGENT_ORDER = (
 AGENT_SKILLS: dict[str, AgentSkill] = {
     USER_INTERACTION_SKILL.code: USER_INTERACTION_SKILL,
     FEATURE_EXTRACTION_SKILL.code: FEATURE_EXTRACTION_SKILL,
+    VIDEO_CONTENT_SKILL.code: VIDEO_CONTENT_SKILL,
     RESOURCE_GENERATION_SKILL.code: RESOURCE_GENERATION_SKILL,
     STUDY_PLAN_SKILL.code: STUDY_PLAN_SKILL,
     TUTOR_QA_SKILL.code: TUTOR_QA_SKILL,
@@ -124,6 +140,7 @@ AGENT_SKILLS: dict[str, AgentSkill] = {
 }
 
 CHAT_ASSISTANT_SKILL_CODES = (
+    VIDEO_CONTENT_SKILL.code,
     RESOURCE_GENERATION_SKILL.code,
     STUDY_PLAN_SKILL.code,
     TUTOR_QA_SKILL.code,
