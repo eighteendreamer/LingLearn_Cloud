@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, desc, delete, func, select, update
+from sqlalchemy import Integer, desc, delete, func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.utils import utc_now_naive
@@ -121,6 +121,7 @@ class ReportRepository:
         period_end = date(year, month, calendar.monthrange(year, month)[1])
         period_start_dt = datetime.combine(period_start, time.min)
         period_end_dt = datetime.combine(period_end + timedelta(days=1), time.min)
+        submitted_session_time = func.coalesce(PracticeSession.finished_at, PracticeSession.submitted_at)
 
         lesson_minutes_result = await session.execute(
             select(func.coalesce(func.sum(UserLessonProgress.watch_seconds), 0))
@@ -157,11 +158,11 @@ class ReportRepository:
                 )
             )
             .where(PracticeSession.user_id == user_id)
-            .where(PracticeSession.status == "completed")
+            .where(PracticeSession.status.in_(("submitted", "completed")))
             .where(PracticeSession.total_questions > 0)
-            .where(PracticeSession.finished_at.isnot(None))
-            .where(PracticeSession.finished_at >= period_start_dt)
-            .where(PracticeSession.finished_at < period_end_dt)
+            .where(submitted_session_time.isnot(None))
+            .where(submitted_session_time >= period_start_dt)
+            .where(submitted_session_time < period_end_dt)
         )
         average_score = float(session_score_result.scalar() or 0)
 
@@ -172,9 +173,10 @@ class ReportRepository:
             )
             .join(PracticeSession, PracticeAnswer.session_id == PracticeSession.id)
             .where(PracticeSession.user_id == user_id)
-            .where(PracticeSession.finished_at.isnot(None))
-            .where(PracticeSession.finished_at >= period_start_dt)
-            .where(PracticeSession.finished_at < period_end_dt)
+            .where(PracticeSession.status.in_(("submitted", "completed")))
+            .where(submitted_session_time.isnot(None))
+            .where(submitted_session_time >= period_start_dt)
+            .where(submitted_session_time < period_end_dt)
         )
         correct_row = correct_result.first()
         total_answers = int(correct_row.total or 0) if correct_row else 0
@@ -184,18 +186,31 @@ class ReportRepository:
         practice_session_count_result = await session.execute(
             select(func.count(PracticeSession.id))
             .where(PracticeSession.user_id == user_id)
-            .where(PracticeSession.status == "completed")
-            .where(PracticeSession.finished_at.isnot(None))
-            .where(PracticeSession.finished_at >= period_start_dt)
-            .where(PracticeSession.finished_at < period_end_dt)
+            .where(PracticeSession.status.in_(("submitted", "completed")))
+            .where(submitted_session_time.isnot(None))
+            .where(submitted_session_time >= period_start_dt)
+            .where(submitted_session_time < period_end_dt)
         )
         practice_sessions = int(practice_session_count_result.scalar() or 0)
 
-        active_days_result = await session.execute(
-            select(func.count(func.distinct(ContentViewHistory.view_date)))
+        activity_days_union = union_all(
+            select(ContentViewHistory.view_date.label("activity_date"))
             .where(ContentViewHistory.user_id == user_id)
             .where(ContentViewHistory.view_date >= period_start)
-            .where(ContentViewHistory.view_date <= period_end)
+            .where(ContentViewHistory.view_date <= period_end),
+            select(func.date(UserLessonProgress.updated_at).label("activity_date"))
+            .where(UserLessonProgress.user_id == user_id)
+            .where(UserLessonProgress.updated_at >= period_start_dt)
+            .where(UserLessonProgress.updated_at < period_end_dt),
+            select(func.date(submitted_session_time).label("activity_date"))
+            .where(PracticeSession.user_id == user_id)
+            .where(PracticeSession.status.in_(("submitted", "completed")))
+            .where(submitted_session_time.isnot(None))
+            .where(submitted_session_time >= period_start_dt)
+            .where(submitted_session_time < period_end_dt),
+        ).subquery()
+        active_days_result = await session.execute(
+            select(func.count(func.distinct(activity_days_union.c.activity_date)))
         )
         active_days = int(active_days_result.scalar() or 0)
 

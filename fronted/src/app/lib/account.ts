@@ -5,6 +5,7 @@ import {
   saveAuthSession,
   saveCurrentUser,
 } from "./session";
+import { uploadFileToStorage } from "./storage";
 import type {
   AuthTokenResponse,
   ContentFavoriteItemResponse,
@@ -16,6 +17,7 @@ import type {
   UserSettingsUpdatePayload,
   UserWorkListItemResponse,
 } from "./types";
+import { applyCurrentUserPreferences } from "./user-preferences";
 
 interface LoginPayload {
   account: string;
@@ -52,6 +54,7 @@ export async function registerWithPassword(payload: RegisterPayload) {
 export async function fetchCurrentUser() {
   const currentUser = await apiRequest<CurrentUserResponse>("/users/me");
   saveCurrentUser(currentUser);
+  applyCurrentUserPreferences(currentUser);
   return currentUser;
 }
 
@@ -61,6 +64,7 @@ export async function updateMyProfile(payload: UserProfileUpdatePayload) {
     body: JSON.stringify(payload),
   });
   saveCurrentUser(currentUser);
+  applyCurrentUserPreferences(currentUser);
   return currentUser;
 }
 
@@ -70,7 +74,15 @@ export async function updateMySettings(payload: UserSettingsUpdatePayload) {
     body: JSON.stringify(payload),
   });
   saveCurrentUser(currentUser);
+  applyCurrentUserPreferences(currentUser);
   return currentUser;
+}
+
+export async function uploadMyAvatar(file: File) {
+  const uploadedAsset = await uploadFileToStorage(file, "user_avatar");
+  return updateMyProfile({
+    avatar_asset_id: uploadedAsset.asset_id,
+  });
 }
 
 export async function fetchMyWorks(userId: number) {
@@ -107,6 +119,7 @@ export async function logoutCurrentUser() {
     }
   } finally {
     clearSession();
+    applyCurrentUserPreferences(null);
   }
 }
 

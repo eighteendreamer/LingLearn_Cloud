@@ -18,6 +18,7 @@ class UserProfileResponse(BaseModel):
     phone: str | None
     display_name: str
     avatar_asset_id: int | None
+    avatar_url: str | None = None
     bio: str | None
     gender: str | None
     birthday: date | None
@@ -50,6 +51,7 @@ class CurrentUserResponse(BaseModel):
 
 class UserProfileUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    avatar_asset_id: int | None = Field(default=None, gt=0)
     bio: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=32)
@@ -76,6 +78,7 @@ class PublicUserResponse(BaseModel):
     username: str
     display_name: str
     avatar_asset_id: int | None
+    avatar_url: str | None = None
     bio: str | None
     location: str | None
     profession: str | None

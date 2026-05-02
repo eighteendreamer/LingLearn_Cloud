@@ -20,6 +20,7 @@ export interface UserProfileResponse {
   phone: string | null;
   display_name: string;
   avatar_asset_id: number | null;
+  avatar_url: string | null;
   bio: string | null;
   gender: string | null;
   birthday: string | null;
@@ -135,6 +136,7 @@ export interface StoredSession {
 
 export interface UserProfileUpdatePayload {
   display_name?: string;
+  avatar_asset_id?: number | null;
   bio?: string | null;
   email?: string;
   phone?: string | null;

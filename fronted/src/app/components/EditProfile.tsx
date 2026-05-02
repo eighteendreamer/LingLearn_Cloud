@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { ApiError } from "../lib/api";
-import { fetchCurrentUser, updateMyProfile } from "../lib/account";
+import { fetchCurrentUser, updateMyProfile, uploadMyAvatar } from "../lib/account";
 import { getStoredCurrentUser, hasSession } from "../lib/session";
 
 type ProfileFormState = {
@@ -41,11 +41,17 @@ function createFormState(currentUser = getStoredCurrentUser()): ProfileFormState
   };
 }
 
+function getAvatarUrl(currentUser = getStoredCurrentUser()) {
+  return currentUser?.profile.avatar_url ?? "";
+}
+
 export function EditProfile() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<ProfileFormState>(() => createFormState());
+  const [avatarUrl, setAvatarUrl] = useState(() => getAvatarUrl());
   const [isLoading, setIsLoading] = useState(!getStoredCurrentUser());
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [submitMessage, setSubmitMessage] = useState("");
 
@@ -61,6 +67,7 @@ export function EditProfile() {
       try {
         const currentUser = await fetchCurrentUser();
         setFormData(createFormState(currentUser));
+        setAvatarUrl(getAvatarUrl(currentUser));
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
           navigate("/login", { replace: true });
@@ -90,7 +97,7 @@ export function EditProfile() {
     setSubmitMessage("");
 
     try {
-      const currentUser = await updateMyProfile({
+      await updateMyProfile({
         display_name: formData.display_name.trim(),
         bio: formData.bio.trim() || null,
         email: formData.email.trim(),
@@ -100,8 +107,7 @@ export function EditProfile() {
         birthday: formData.birthday || null,
         learning_goal: formData.learning_goal.trim() || null,
       });
-      setFormData(createFormState(currentUser));
-      setSubmitMessage("资料已同步到后端");
+      navigate("/profile", { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         navigate("/login", { replace: true });
@@ -113,27 +119,54 @@ export function EditProfile() {
     }
   };
 
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    setSubmitError("");
+    setSubmitMessage("");
+
+    try {
+      const currentUser = await uploadMyAvatar(file);
+      setFormData(createFormState(currentUser));
+      setAvatarUrl(getAvatarUrl(currentUser));
+      setSubmitMessage("头像已更新");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        navigate("/login", { replace: true });
+        return;
+      }
+      setSubmitError(error instanceof Error ? error.message : "头像上传失败");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
-      <div className="sticky top-0 z-10 flex items-center gap-3 p-4 bg-white/95 backdrop-blur-lg border-b border-gray-200 shadow-sm">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white/95 p-4 shadow-sm backdrop-blur-lg">
         <Link to="/profile">
-          <ArrowLeft className="w-6 h-6 text-gray-700" />
+          <ArrowLeft className="h-6 w-6 text-gray-700" />
         </Link>
         <div className="flex-1">
           <h1 className="text-lg font-semibold text-gray-900">编辑资料</h1>
-          <p className="text-xs text-gray-600">修改后会实时同步到用户中心</p>
+          <p className="text-xs text-gray-600">保存后会同步更新到用户中心</p>
         </div>
         <button
           onClick={handleSave}
-          disabled={isLoading || isSaving}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg text-sm font-bold hover:shadow-lg transition-all disabled:opacity-60"
+          disabled={isLoading || isSaving || isUploadingAvatar}
+          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-sm font-bold text-white transition-all hover:shadow-lg disabled:opacity-60"
         >
-          <Save className="w-4 h-4" />
+          <Save className="h-4 w-4" />
           {isSaving ? "保存中..." : "保存"}
         </button>
       </div>
 
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="mx-auto max-w-2xl p-6">
         {(submitError || submitMessage) && (
           <div
             className={`mb-6 rounded-2xl px-4 py-3 text-sm ${
@@ -146,36 +179,50 @@ export function EditProfile() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl p-6 shadow-md mb-6">
+        <div className="mb-6 rounded-2xl bg-white p-6 shadow-md">
           <div className="flex items-center gap-6">
             <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                {formData.display_name.trim().charAt(0).toUpperCase() || "L"}
-              </div>
-              <button
-                type="button"
-                className="absolute -bottom-1 -right-1 w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center border-2 border-emerald-500 hover:bg-emerald-50 transition-colors"
-              >
-                <Camera className="w-4 h-4 text-emerald-600" />
-              </button>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={formData.display_name || "avatar"}
+                  className="h-20 w-20 rounded-full object-cover shadow-lg"
+                />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-2xl font-bold text-white shadow-lg">
+                  {formData.display_name.trim().charAt(0).toUpperCase() || "L"}
+                </div>
+              )}
+              <label className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-emerald-500 bg-white shadow-md transition-colors hover:bg-emerald-50">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                  disabled={isUploadingAvatar}
+                />
+                <Camera className="h-4 w-4 text-emerald-600" />
+              </label>
             </div>
             <div>
-              <h3 className="text-gray-900 font-semibold mb-1">头像上传待接入</h3>
-              <p className="text-gray-600 text-sm">
-                资料接口已经联通，头像后续接存储服务后可以直接补上。
+              <h3 className="mb-1 font-semibold text-gray-900">头像上传</h3>
+              <p className="text-sm text-gray-600">
+                {isUploadingAvatar
+                  ? "头像上传中..."
+                  : "头像会先上传到 MinIO，然后自动绑定到当前用户资料。"}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-md mb-6">
-          <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
-            <User className="w-5 h-5 text-emerald-500" />
+        <div className="mb-6 rounded-2xl bg-white p-6 shadow-md">
+          <h3 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+            <User className="h-5 w-5 text-emerald-500" />
             基本信息
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">昵称</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">昵称</label>
               <input
                 type="text"
                 name="display_name"
@@ -183,27 +230,27 @@ export function EditProfile() {
                 onChange={handleInputChange}
                 placeholder="请输入昵称"
                 disabled={isLoading}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">个人简介</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">个人简介</label>
               <textarea
                 name="bio"
                 value={formData.bio}
                 onChange={handleInputChange}
                 placeholder="介绍一下你的学习方向和兴趣"
                 disabled={isLoading}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all resize-none disabled:opacity-60"
+                className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 rows={3}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">职业</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">职业</label>
               <div className="relative">
-                <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Briefcase className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   name="profession"
@@ -211,36 +258,36 @@ export function EditProfile() {
                   onChange={handleInputChange}
                   placeholder="请输入职业"
                   disabled={isLoading}
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-12 pr-4 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">学习目标</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">学习目标</label>
               <textarea
                 name="learning_goal"
                 value={formData.learning_goal}
                 onChange={handleInputChange}
-                placeholder="例如：3 个月内完成前后端项目实战"
+                placeholder="例如：一个月内完成前后端项目实战"
                 disabled={isLoading}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all resize-none disabled:opacity-60"
+                className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 rows={3}
               />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-md mb-6">
-          <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
-            <Mail className="w-5 h-5 text-emerald-500" />
+        <div className="mb-6 rounded-2xl bg-white p-6 shadow-md">
+          <h3 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+            <Mail className="h-5 w-5 text-emerald-500" />
             联系方式
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">邮箱</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="email"
                   name="email"
@@ -248,15 +295,15 @@ export function EditProfile() {
                   onChange={handleInputChange}
                   placeholder="请输入邮箱"
                   disabled={isLoading}
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-12 pr-4 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">手机号</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">手机号</label>
               <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Phone className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="tel"
                   name="phone"
@@ -264,15 +311,15 @@ export function EditProfile() {
                   onChange={handleInputChange}
                   placeholder="请输入手机号"
                   disabled={isLoading}
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-12 pr-4 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">所在地</label>
+              <label className="mb-2 block text-sm font-medium text-gray-700">所在地</label>
               <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <MapPin className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   name="location"
@@ -280,29 +327,29 @@ export function EditProfile() {
                   onChange={handleInputChange}
                   placeholder="请输入所在地"
                   disabled={isLoading}
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-12 pr-4 text-gray-900 placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
                 />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-md">
-          <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-emerald-500" />
+        <div className="rounded-2xl bg-white p-6 shadow-md">
+          <h3 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+            <Calendar className="h-5 w-5 text-emerald-500" />
             其他信息
           </h3>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">生日</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">生日</label>
             <div className="relative">
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Calendar className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
                 type="date"
                 name="birthday"
                 value={formData.birthday}
                 onChange={handleInputChange}
                 disabled={isLoading}
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all disabled:opacity-60"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-12 pr-4 text-gray-900 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
               />
             </div>
           </div>

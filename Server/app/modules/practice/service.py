@@ -542,6 +542,11 @@ JSON schema:
             correct_count = sum(1 for ans in answers if ans.is_correct)
             earned_score = sum(ans.earned_score for ans in answers)
             total_score = practice_session.total_questions
+            submitted_at = utc_now_naive()
+            duration_seconds = max(
+                0,
+                int((submitted_at - practice_session.started_at).total_seconds()),
+            )
 
             await self.repository.update_practice_session(
                 session,
@@ -549,8 +554,10 @@ JSON schema:
                 {
                     "correct_answers": correct_count,
                     "earned_score": earned_score,
-                    "status": "submitted",
-                    "submitted_at": utc_now_naive(),
+                    "status": "completed",
+                    "submitted_at": submitted_at,
+                    "finished_at": submitted_at,
+                    "duration_seconds": duration_seconds,
                 },
             )
             await session.commit()

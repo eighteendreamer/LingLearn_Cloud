@@ -187,6 +187,11 @@ class ReportService:
 
     async def _build_response(self, session: AsyncSession, report) -> MonthlyReportResponse:
         achievements = await self.repository.list_achievements(session, report.id)
+        live_monthly_stats = await self.repository.aggregate_monthly_stats(
+            session,
+            report.user_id,
+            report.report_month,
+        )
         return MonthlyReportResponse(
             id=report.id,
             user_id=report.user_id,
@@ -195,7 +200,7 @@ class ReportService:
             report_status=report.report_status,
             total_learning_minutes=report.total_learning_minutes,
             completed_courses=report.completed_courses,
-            average_score=float(report.average_score),
+            average_score=float(live_monthly_stats["average_score"]),
             site_rank=report.site_rank,
             strengths=report.strengths_json or [],
             improvements=report.improvements_json or [],

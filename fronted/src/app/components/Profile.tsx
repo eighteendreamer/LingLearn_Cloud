@@ -33,6 +33,18 @@ function formatInitial(name: string) {
   return name.trim().charAt(0).toUpperCase() || "L";
 }
 
+function formatLanguageLabel(language: string) {
+  switch (language) {
+    case "en-US":
+      return "English";
+    case "zh-TW":
+      return "繁體中文";
+    case "zh-CN":
+    default:
+      return "简体中文";
+  }
+}
+
 function formatRelativeTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -243,9 +255,17 @@ export function Profile() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.35),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(255,255,255,0.2),_transparent_30%)]" />
           </div>
           <div className="absolute -bottom-12 left-6">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-500 to-teal-500 text-3xl font-bold text-white shadow-xl">
-              {formatInitial(profile.display_name || profile.username)}
-            </div>
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={profile.display_name}
+                className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-xl"
+              />
+            ) : (
+              <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-500 to-teal-500 text-3xl font-bold text-white shadow-xl">
+                {formatInitial(profile.display_name || profile.username)}
+              </div>
+            )}
           </div>
           <Link to="/settings" className="absolute right-3 top-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/90 shadow-md backdrop-blur-sm transition-all hover:scale-105">
@@ -295,7 +315,9 @@ export function Profile() {
             </div>
             <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="mb-1 text-xs text-gray-500">界面语言</p>
-              <p className="text-lg font-bold text-gray-900">{currentUser.settings.language}</p>
+              <p className="text-lg font-bold text-gray-900">
+                {formatLanguageLabel(currentUser.settings.language)}
+              </p>
             </div>
           </div>
 

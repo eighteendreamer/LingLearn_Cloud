@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.pagination import PaginationParams, build_page_response
 from app.common.utils import utc_now_naive
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.infra.storage.service import StorageService
 from app.modules.auth.repository import AuthRepository
 from app.modules.content.service import ContentService
 from app.modules.user.repository import UserRepository
@@ -32,18 +33,21 @@ class UserService:
         repository: UserRepository | None = None,
         auth_repository: AuthRepository | None = None,
         content_service: ContentService | None = None,
+        storage_service: StorageService | None = None,
     ) -> None:
         self.repository = repository or UserRepository()
         self.auth_repository = auth_repository or AuthRepository()
         self.content_service = content_service or ContentService()
+        self.storage_service = storage_service or StorageService()
 
     async def get_me(self, session: AsyncSession, user_id: int) -> CurrentUserResponse:
         bundle = await self.repository.get_user_with_profile_and_settings(session, user_id)
         if bundle is None:
             raise NotFoundError(message="User not found.")
         user, profile, settings = bundle
+        stats = await self.repository.aggregate_user_learning_stats(session, user_id=user_id)
         return CurrentUserResponse(
-            profile=self._build_profile_response(user, profile),
+            profile=await self._build_profile_response(session, user, profile, stats=stats),
             settings=UserSettingsResponse.model_validate(settings, from_attributes=True),
         )
 
@@ -58,6 +62,7 @@ class UserService:
 
         for field_name in [
             "display_name",
+            "avatar_asset_id",
             "bio",
             "location",
             "profession",
@@ -69,6 +74,18 @@ class UserService:
                 profile_updates[field_name] = value
 
         async with session.begin():
+            if req.avatar_asset_id is not None:
+                avatar_asset = await self.repository.get_media_asset_by_id(
+                    session,
+                    asset_id=req.avatar_asset_id,
+                )
+                if avatar_asset is None or avatar_asset.status != "active":
+                    raise BadRequestError(message="Avatar asset does not exist or is inactive.")
+                if avatar_asset.uploaded_by != user_id:
+                    raise BadRequestError(message="Avatar asset must belong to the current user.")
+                if avatar_asset.asset_type != "avatar":
+                    raise BadRequestError(message="avatar_asset_id must reference an avatar upload.")
+
             if req.email is not None:
                 if await self.auth_repository.email_exists(
                     session,
@@ -109,6 +126,12 @@ class UserService:
                 user_id=user_id,
                 values=settings_updates,
             )
+            if req.language is not None:
+                await self.repository.update_profile_fields(
+                    session,
+                    user_id=user_id,
+                    values={"locale": req.language},
+                )
         return await self.get_me(session, user_id)
 
     async def get_public_user(
@@ -122,6 +145,7 @@ class UserService:
         if bundle is None:
             raise NotFoundError(message="User not found.")
         user, profile = bundle
+        stats = await self.repository.aggregate_user_learning_stats(session, user_id=user_id)
         is_following = False
         if viewer_user_id is not None and viewer_user_id != user_id:
             is_following = await self.repository.is_following(
@@ -134,11 +158,19 @@ class UserService:
             username=user.username,
             display_name=profile.display_name,
             avatar_asset_id=profile.avatar_asset_id,
+            avatar_url=await self._build_avatar_url(session, profile.avatar_asset_id),
             bio=profile.bio,
             location=profile.location,
             profession=profile.profession,
             learning_goal=profile.learning_goal,
-            stats=self._build_stats(profile),
+            stats=self._build_stats(
+                {
+                    **stats,
+                    "followers_count": profile.followers_count,
+                    "following_count": profile.following_count,
+                    "likes_received_count": profile.likes_received_count,
+                }
+            ),
             is_following=is_following,
         )
 
@@ -328,16 +360,16 @@ class UserService:
         )
 
     @staticmethod
-    def _build_stats(profile) -> UserStatsResponse:
+    def _build_stats(profile_stats: dict) -> UserStatsResponse:
         return UserStatsResponse(
-            total_learning_minutes=profile.total_learning_minutes,
-            streak_days=profile.streak_days,
-            followers_count=profile.followers_count,
-            following_count=profile.following_count,
-            likes_received_count=profile.likes_received_count,
+            total_learning_minutes=int(profile_stats.get("total_learning_minutes") or 0),
+            streak_days=int(profile_stats.get("streak_days") or 0),
+            followers_count=int(profile_stats.get("followers_count") or 0),
+            following_count=int(profile_stats.get("following_count") or 0),
+            likes_received_count=int(profile_stats.get("likes_received_count") or 0),
         )
 
-    def _build_profile_response(self, user, profile) -> UserProfileResponse:
+    async def _build_profile_response(self, session: AsyncSession, user, profile, *, stats: dict) -> UserProfileResponse:
         return UserProfileResponse(
             user_id=user.id,
             username=user.username,
@@ -345,6 +377,7 @@ class UserService:
             phone=user.phone,
             display_name=profile.display_name,
             avatar_asset_id=profile.avatar_asset_id,
+            avatar_url=await self._build_avatar_url(session, profile.avatar_asset_id),
             bio=profile.bio,
             gender=profile.gender,
             birthday=profile.birthday,
@@ -353,9 +386,27 @@ class UserService:
             learning_goal=profile.learning_goal,
             timezone=profile.timezone,
             locale=profile.locale,
-            stats=self._build_stats(profile),
+            stats=self._build_stats(
+                {
+                    **stats,
+                    "followers_count": profile.followers_count,
+                    "following_count": profile.following_count,
+                    "likes_received_count": profile.likes_received_count,
+                }
+            ),
             created_at=profile.created_at,
             updated_at=profile.updated_at,
+        )
+
+    async def _build_avatar_url(self, session: AsyncSession, avatar_asset_id: int | None) -> str | None:
+        if avatar_asset_id is None:
+            return None
+        asset = await self.repository.get_media_asset_by_id(session, asset_id=avatar_asset_id)
+        if asset is None:
+            return None
+        return await self.storage_service.build_access_url(
+            object_key=asset.object_key,
+            public_url=asset.public_url,
         )
 
     @staticmethod

@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import and_, case, desc, func, literal, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,9 @@ from sqlalchemy.orm import aliased
 
 from app.modules.auth.models import User
 from app.modules.content.models import ContentCategory, ContentFavorite, ContentItem, ContentItemTag, ContentLike, Tag
+from app.modules.content.models import ContentViewHistory
+from app.modules.course.models import UserLessonProgress
+from app.modules.practice.models import PracticeSession
 from app.modules.storage.models import MediaAsset
 from app.modules.user.models import UserFollowRelation, UserProfile, UserSettings
 
@@ -73,6 +77,54 @@ class UserRepository:
             return
         stmt = update(UserSettings).where(UserSettings.user_id == user_id).values(**values)
         await session.execute(stmt)
+
+    async def get_media_asset_by_id(
+        self,
+        session: AsyncSession,
+        *,
+        asset_id: int,
+    ) -> MediaAsset | None:
+        return await session.scalar(select(MediaAsset).where(MediaAsset.id == asset_id))
+
+    async def aggregate_user_learning_stats(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        today: date | None = None,
+    ) -> dict[str, int]:
+        lesson_seconds_result = await session.execute(
+            select(func.coalesce(func.sum(UserLessonProgress.watch_seconds), 0))
+            .where(UserLessonProgress.user_id == user_id)
+        )
+        content_seconds_result = await session.execute(
+            select(func.coalesce(func.sum(ContentViewHistory.watch_seconds), 0))
+            .where(ContentViewHistory.user_id == user_id)
+        )
+
+        total_learning_seconds = int(lesson_seconds_result.scalar() or 0) + int(content_seconds_result.scalar() or 0)
+        total_learning_minutes = int(round(total_learning_seconds / 60)) if total_learning_seconds else 0
+
+        activity_dates: set[date] = set()
+        activity_statements = [
+            select(ContentViewHistory.view_date).where(ContentViewHistory.user_id == user_id),
+            select(func.date(UserLessonProgress.updated_at)).where(UserLessonProgress.user_id == user_id),
+            select(func.date(func.coalesce(PracticeSession.finished_at, PracticeSession.submitted_at)))
+            .where(PracticeSession.user_id == user_id)
+            .where(PracticeSession.status.in_(("submitted", "completed")))
+            .where(func.coalesce(PracticeSession.finished_at, PracticeSession.submitted_at).is_not(None)),
+        ]
+        for stmt in activity_statements:
+            values = (await session.execute(stmt)).scalars().all()
+            for value in values:
+                normalized = self._normalize_activity_date(value)
+                if normalized is not None:
+                    activity_dates.add(normalized)
+
+        return {
+            "total_learning_minutes": total_learning_minutes,
+            "streak_days": self._calculate_streak_days(activity_dates, today=today or date.today()),
+        }
 
     async def get_follow_relation(
         self,
@@ -321,3 +373,34 @@ class UserRepository:
             ContentItem.publish_status == "published",
             ContentItem.published_at.is_not(None),
         )
+
+    @staticmethod
+    def _normalize_activity_date(value) -> date | None:
+        if value is None:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _calculate_streak_days(activity_dates: set[date], *, today: date) -> int:
+        if not activity_dates:
+            return 0
+
+        latest_activity = max(activity_dates)
+        if latest_activity < today - timedelta(days=1):
+            return 0
+
+        streak_days = 0
+        cursor = latest_activity
+        while cursor in activity_dates:
+            streak_days += 1
+            cursor -= timedelta(days=1)
+        return streak_days
