@@ -101,6 +101,10 @@ export async function fetchMonthlyReports() {
   return apiRequest<MonthlyReportResponse[]>("/users/me/reports");
 }
 
+export async function fetchMonthlyReport(reportMonth: string) {
+  return apiRequest<MonthlyReportResponse>(`/users/me/reports/${reportMonth}`);
+}
+
 export async function generateMonthlyReport(reportMonth: string) {
   return apiRequest<MonthlyReportResponse>(`/users/me/reports/${reportMonth}/generate`, {
     method: "POST",
