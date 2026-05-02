@@ -95,3 +95,62 @@ class UserWorkListItemResponse(BaseModel):
     summary: str | None
     cover_url: str | None = None
     published_at: datetime | None = None
+
+
+class UserPreferenceFacetResponse(BaseModel):
+    key: str
+    name: str
+    score: float
+    likes_count: int
+    favorites_count: int
+    content_count: int
+
+
+class UserPreferenceAuthorFacetResponse(BaseModel):
+    user_id: int
+    display_name: str
+    score: float
+    likes_count: int
+    favorites_count: int
+    content_count: int
+
+
+class UserPreferenceRecentActionResponse(BaseModel):
+    content_id: int
+    title: str
+    cover_url: str | None = None
+    category_name: str | None = None
+    author_name: str
+    action_type: str
+    acted_at: datetime
+
+
+class UserPreferenceContentItemResponse(BaseModel):
+    content_id: int
+    title: str
+    cover_url: str | None = None
+    category_key: str
+    category_name: str
+    author_name: str
+    liked: bool
+    favorited: bool
+    latest_acted_at: datetime
+
+
+class UserPreferenceCategoryGroupResponse(BaseModel):
+    key: str
+    name: str
+    item_count: int
+    items: list[UserPreferenceContentItemResponse]
+
+
+class UserLearningPreferenceInsightResponse(BaseModel):
+    summary: str
+    total_likes: int
+    total_favorites: int
+    total_interactions: int
+    top_categories: list[UserPreferenceFacetResponse]
+    top_tags: list[UserPreferenceFacetResponse]
+    top_authors: list[UserPreferenceAuthorFacetResponse]
+    recent_actions: list[UserPreferenceRecentActionResponse]
+    grouped_works: list[UserPreferenceCategoryGroupResponse]

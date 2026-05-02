@@ -11,6 +11,7 @@ import type {
   ContentWatchHistoryItemResponse,
   CurrentUserResponse,
   PageResponse,
+  UserLearningPreferenceInsightResponse,
   UserProfileUpdatePayload,
   UserSettingsUpdatePayload,
   UserWorkListItemResponse,
@@ -88,6 +89,10 @@ export async function fetchMyWatchHistory(page = 1, pageSize = 6) {
   return apiRequest<PageResponse<ContentWatchHistoryItemResponse>>(
     `/users/me/watch-history?page=${page}&page_size=${pageSize}`,
   );
+}
+
+export async function fetchMyLearningPreferences() {
+  return apiRequest<UserLearningPreferenceInsightResponse>("/users/me/learning-preferences");
 }
 
 export async function logoutCurrentUser() {

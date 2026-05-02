@@ -58,6 +58,65 @@ export interface UserWorkListItemResponse {
   published_at: string | null;
 }
 
+export interface UserPreferenceFacetResponse {
+  key: string;
+  name: string;
+  score: number;
+  likes_count: number;
+  favorites_count: number;
+  content_count: number;
+}
+
+export interface UserPreferenceAuthorFacetResponse {
+  user_id: number;
+  display_name: string;
+  score: number;
+  likes_count: number;
+  favorites_count: number;
+  content_count: number;
+}
+
+export interface UserPreferenceRecentActionResponse {
+  content_id: number;
+  title: string;
+  cover_url: string | null;
+  category_name: string | null;
+  author_name: string;
+  action_type: string;
+  acted_at: string;
+}
+
+export interface UserPreferenceContentItemResponse {
+  content_id: number;
+  title: string;
+  cover_url: string | null;
+  category_key: string;
+  category_name: string;
+  author_name: string;
+  liked: boolean;
+  favorited: boolean;
+  latest_acted_at: string;
+}
+
+export interface UserPreferenceCategoryGroupResponse {
+  key: string;
+  name: string;
+  item_count: number;
+  items: UserPreferenceContentItemResponse[];
+}
+
+export interface UserLearningPreferenceInsightResponse {
+  summary: string;
+  total_likes: number;
+  total_favorites: number;
+  total_interactions: number;
+  top_categories: UserPreferenceFacetResponse[];
+  top_tags: UserPreferenceFacetResponse[];
+  top_authors: UserPreferenceAuthorFacetResponse[];
+  recent_actions: UserPreferenceRecentActionResponse[];
+  grouped_works: UserPreferenceCategoryGroupResponse[];
+}
+
 export interface PageResponse<T> {
   list: T[];
   page: number;

@@ -51,6 +51,13 @@ async def list_my_watch_history(session: DBSession, current_user: CurrentUser, p
     return success(data=data.model_dump(mode="json"))
 
 
+@router.get("/me/learning-preferences")
+async def get_my_learning_preferences(session: DBSession, current_user: CurrentUser):
+    service = UserService()
+    data = await service.get_learning_preference_insight(session, int(current_user.sub))
+    return success(data=data.model_dump(mode="json"))
+
+
 @router.get("/{user_id}")
 async def get_public_user(user_id: int, session: DBSession, current_user: OptionalCurrentUser):
     service = UserService()
