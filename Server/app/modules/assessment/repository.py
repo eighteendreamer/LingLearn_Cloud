@@ -43,6 +43,24 @@ class AssessmentRepository:
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_snapshot_for_period(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        assessment_type: str,
+        period_start: date,
+        period_end: date,
+    ) -> AssessmentSnapshot | None:
+        stmt = select(AssessmentSnapshot).where(
+            AssessmentSnapshot.user_id == user_id,
+            AssessmentSnapshot.assessment_type == assessment_type,
+            AssessmentSnapshot.period_start == period_start,
+            AssessmentSnapshot.period_end == period_end,
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create_snapshot(
         self,
         session: AsyncSession,
