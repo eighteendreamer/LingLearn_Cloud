@@ -1,339 +1,657 @@
 import { useEffect, useState } from "react";
-import { Check, Lock, PlayCircle, BookOpen, Brain, Lightbulb, Link as LinkIcon } from "lucide-react";
-import { Link } from "react-router";
 import {
-  fetchOrGenerateLearningPath,
+  BookOpen,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  ExternalLink,
+  History,
+  PlayCircle,
+  Route,
+  Sparkles,
+  Target,
+} from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { MarkdownMessage } from "./MarkdownMessage";
+import {
+  activateLearningPath,
+  fetchActiveLearningPath,
+  fetchLearningPathById,
+  fetchLearningPathHistory,
   fetchOrGenerateSkillProfile,
+  generateLearningPathNodePractice,
+  generateLearningPathPlan,
   updateLearningPathNode,
 } from "../lib/learning-api";
-import type { SkillSnapshotResponse, UserLearningPathResponse } from "../lib/types";
+import type {
+  LearningPathGeneratePayload,
+  LearningPathNodeResponse,
+  LearningPathPlanResponse,
+  LearningPathPlanRouteResponse,
+  SkillSnapshotResponse,
+  UserLearningPathResponse,
+} from "../lib/types";
 
-interface PathNode {
-  id: string;
-  title: string;
-  description: string;
-  status: "completed" | "current" | "locked";
-  progress?: number;
-  lessons?: number;
-  duration?: string;
-  recommendReason?: string;
-  matchedAbilities?: string[];
-}
+const defaultForm: LearningPathGeneratePayload = {
+  target_role: "后端开发",
+  current_level: "beginner",
+  weekly_hours: 6,
+  route_count: 3,
+  preferred_resource_mode: "mixed",
+};
+
+const levelLabel: Record<string, string> = {
+  beginner: "入门",
+  intermediate: "进阶",
+  advanced: "高级",
+};
+
+const statusLabel: Record<string, string> = {
+  active: "当前路线",
+  archived: "历史路线",
+  completed: "已完成",
+};
 
 export function LearningPath() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<SkillSnapshotResponse | null>(null);
-  const [learningPath, setLearningPath] = useState<UserLearningPathResponse | null>(null);
+  const [activePath, setActivePath] = useState<UserLearningPathResponse | null>(null);
+  const [displayPath, setDisplayPath] = useState<UserLearningPathResponse | null>(null);
+  const [historyPaths, setHistoryPaths] = useState<UserLearningPathResponse[]>([]);
+  const [planResult, setPlanResult] = useState<LearningPathPlanResponse | null>(null);
+  const [form, setForm] = useState<LearningPathGeneratePayload>(defaultForm);
   const [loading, setLoading] = useState(true);
+  const [planning, setPlanning] = useState(false);
+  const [activatingRouteCode, setActivatingRouteCode] = useState<string | null>(null);
+  const [loadingHistoryId, setLoadingHistoryId] = useState<number | null>(null);
+  const [practiceNodeId, setPracticeNodeId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadLearningPath = async () => {
+    const load = async () => {
       try {
         setLoading(true);
-        const [profileData, pathData] = await Promise.all([
+        const [profileData, currentPath, history] = await Promise.all([
           fetchOrGenerateSkillProfile(),
-          fetchOrGenerateLearningPath(),
+          fetchActiveLearningPath(),
+          fetchLearningPathHistory(),
         ]);
         setProfile(profileData);
-        setLearningPath(pathData);
-      } catch (error) {
-        console.error("Failed to load learning path:", error);
+        setActivePath(currentPath);
+        setDisplayPath(currentPath ?? history[0] ?? null);
+        setHistoryPaths(history);
+      } catch (loadError) {
+        console.error("Failed to load learning path page:", loadError);
+        setError("加载学习路径页面失败，请稍后重试。");
       } finally {
         setLoading(false);
       }
     };
 
-    void loadLearningPath();
+    void load();
   }, []);
 
-  const studentProfile = Object.fromEntries(
-    (profile?.scores.length ? profile.scores : []).map((score) => [score.name, Math.round(score.score)])
-  ) as Record<string, number>;
+  const displayedCompletedCount = displayPath?.nodes.filter((node) => node.status === "completed").length ?? 0;
+  const displayedNodeCount = displayPath?.nodes.length ?? 0;
 
-  const profileEntries: Array<[string, number]> = Object.entries(studentProfile).length > 0
-    ? (Object.entries(studentProfile) as Array<[string, number]>)
-    : [
-        ["编程基础", 78],
-        ["算法思维", 72],
-        ["数据库", 70],
-        ["前端开发", 75],
-        ["学习自驱", 82],
-      ];
-
-  const paths: PathNode[] = learningPath?.nodes.length
-    ? learningPath.nodes.map((node, index) => {
-        const isCurrent = learningPath.current_node_id === node.node_id || node.status === "in_progress" || node.status === "unlocked";
-        return {
-          id: String(node.node_id),
-          title: node.title,
-          description: node.description || "按计划完成该阶段学习任务。",
-          status: node.status === "completed" ? "completed" : isCurrent ? "current" : "locked",
-          progress: Math.round(node.progress_percent),
-          lessons: Math.max(1, Math.ceil(node.estimated_minutes / 30)),
-          duration: `${Math.max(1, Math.round(node.estimated_minutes / 60))}小时`,
-          recommendReason: node.recommended_reason || learningPath.ai_summary || "根据能力画像生成的个性化学习节点。",
-          matchedAbilities: profileEntries.slice(index, index + 2).map(([name, value]) => `${name}: ${value}分`),
-        };
-      })
-    : [];
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <Check className="w-5 h-5 text-white" />;
-      case "current":
-        return <PlayCircle className="w-5 h-5 text-white" />;
-      case "locked":
-        return <Lock className="w-5 h-5 text-white" />;
-      default:
-        return null;
+  const refreshHistory = async (preferredPathId?: number) => {
+    const history = await fetchLearningPathHistory();
+    setHistoryPaths(history);
+    if (preferredPathId) {
+      const preferred = history.find((item) => item.id === preferredPathId);
+      if (preferred) {
+        setDisplayPath(preferred);
+        if (preferred.status === "active") {
+          setActivePath(preferred);
+        }
+        return;
+      }
+    }
+    if (!displayPath) {
+      setDisplayPath(history[0] ?? null);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-emerald-500";
-      case "current":
-        return "bg-blue-500";
-      case "locked":
-        return "bg-gray-300";
-      default:
-        return "bg-gray-300";
+  const handleGeneratePlan = async () => {
+    try {
+      setPlanning(true);
+      setError(null);
+      const result = await generateLearningPathPlan(form);
+      setPlanResult(result);
+    } catch (planError) {
+      console.error("Failed to generate learning path plan:", planError);
+      setError("生成学习规划失败，请稍后再试。");
+    } finally {
+      setPlanning(false);
     }
   };
 
-  const totalProgress = Math.round(
-    paths.length ? paths.reduce((sum, node) => sum + (node.progress || 0), 0) / paths.length : 0
-  );
+  const handleActivateRoute = async (route: LearningPathPlanRouteResponse) => {
+    try {
+      setActivatingRouteCode(route.route_code);
+      setError(null);
+      const path = await activateLearningPath({ selected_route: route });
+      setActivePath(path);
+      setDisplayPath(path);
+      setPlanResult(null);
+      await refreshHistory(path.id);
+    } catch (activateError) {
+      console.error("Failed to activate route:", activateError);
+      setError("激活学习路线失败，请稍后重试。");
+    } finally {
+      setActivatingRouteCode(null);
+    }
+  };
 
-  const handleCompleteNode = async (node: PathNode) => {
-    if (!learningPath) {
+  const handleOpenHistory = async (userPathId: number) => {
+    try {
+      setLoadingHistoryId(userPathId);
+      setError(null);
+      const path = await fetchLearningPathById(userPathId);
+      setDisplayPath(path);
+      setPlanResult(null); // Switch back to path view
+    } catch (historyError) {
+      console.error("Failed to load history learning path:", historyError);
+      setError("读取历史路线失败，请稍后重试。");
+    } finally {
+      setLoadingHistoryId(null);
+    }
+  };
+
+  const handleCompleteNode = async (node: LearningPathNodeResponse) => {
+    if (!displayPath) {
       return;
     }
-
     try {
-      const updatedPath = await updateLearningPathNode(learningPath.id, Number(node.id), "completed", 100);
-      setLearningPath(updatedPath);
-    } catch (error) {
-      console.error("Failed to update learning path node:", error);
+      setError(null);
+      const path = await updateLearningPathNode(displayPath.id, node.node_id, "completed", 100);
+      if (activePath?.id === displayPath.id) {
+        setActivePath(path);
+      }
+      setDisplayPath(path);
+      await refreshHistory(path.id);
+    } catch (updateError) {
+      console.error("Failed to complete learning path node:", updateError);
+      setError("更新阶段状态失败，请稍后再试。");
+    }
+  };
+
+  const handleGeneratePractice = async (node: LearningPathNodeResponse) => {
+    if (!displayPath) {
+      return;
+    }
+    try {
+      setPracticeNodeId(node.node_id);
+      setError(null);
+      const result = await generateLearningPathNodePractice(displayPath.id, node.node_id);
+      navigate(`/practice?bank_id=${result.bank_id}&session_id=${result.session_id}`);
+    } catch (practiceError) {
+      console.error("Failed to generate stage practice:", practiceError);
+      setError("生成阶段题库失败，请稍后重试。");
+    } finally {
+      setPracticeNodeId(null);
     }
   };
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
-      <div className="p-8 max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-800 mb-2 flex items-center gap-2">
-            <Brain className="w-7 h-7 text-emerald-500" />
-            AI定制学习路径
-          </h1>
-          <p className="text-gray-600">基于你的能力画像智能推荐学习计划</p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="lg:col-span-2 bg-white rounded-xl p-5 shadow-md border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">你的能力画像</h3>
-              <Link to="/student-profile" className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-                查看详情
-                <LinkIcon className="w-3 h-3" />
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {profileEntries.map(([dimension, value]) => (
-                <div key={dimension}>
-                  <div className="flex justify-between text-sm mb-1.5">
-                    <span className="text-gray-700">{dimension}</span>
-                    <span className={`font-bold ${value >= 80 ? 'text-emerald-600' : value >= 70 ? 'text-blue-600' : 'text-orange-600'}`}>
-                      {value}分
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full ${value >= 80 ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : value >= 70 ? 'bg-gradient-to-r from-blue-400 to-indigo-500' : 'bg-gradient-to-r from-orange-400 to-amber-500'}`}
-                      style={{ width: `${value}%` }}
-                    ></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-5 shadow-md">
-            <div className="flex items-start gap-3">
-              <Lightbulb className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="font-semibold text-emerald-900 mb-2 text-sm">AI智能建议</h3>
-                <div className="text-xs text-emerald-800 space-y-2">
-                  <p>✅ <strong>优势：</strong>学习专注、逻辑思维强</p>
-                  <p>💡 <strong>成长：</strong>{loading ? "正在生成后端建议" : (learningPath?.ai_summary || "按当前路径逐步推进")}</p>
-                  <p>🎯 <strong>策略：</strong>优先完成当前节点，再解锁后续阶段</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      <div className="bg-white rounded-xl p-6 shadow-md border border-gray-200 mb-6">
-        <div className="flex items-center justify-between mb-4">
+    <div className="h-screen overflow-y-auto bg-slate-50 pb-24 font-sans text-slate-900 selection:bg-slate-200">
+      <div className="mx-auto max-w-[1200px] px-6 py-12">
+        
+        {/* Header */}
+        <header className="mb-12 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">整体学习进度</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              已完成 {paths.filter(p => p.status === "completed").length} / {paths.length} 个阶段
-              <span className="ml-2 text-emerald-600">· 进行中 {paths.filter(p => p.status === "current").length} 个</span>
+            <div className="mb-3 inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+              <Sparkles className="h-3.5 w-3.5" />
+              AI 定制学习路径
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              学习路径
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              基于您的能力画像为您量身定制学习路线。系统将为您拆解每个阶段的学习目标，并推荐相关的学习资源和考核内容。
             </p>
           </div>
-          <div className="text-4xl font-bold text-emerald-500">{totalProgress}%</div>
-        </div>
-        <div className="w-full bg-gray-100 rounded-full h-3">
-          <div
-            className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all shadow-sm"
-            style={{ width: `${totalProgress}%` }}
-          ></div>
-        </div>
-        <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
-          <span>已投入 {paths.filter(p => p.status === "completed").length * 12}+ 小时</span>
-          <span>预计总时长 {paths.reduce((sum, p) => sum + parseInt(p.duration || "0"), 0)} 小时</span>
-        </div>
-      </div>
+          <Link
+            to="/student-profile"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900"
+          >
+            查看能力画像
+            <ExternalLink className="h-4 w-4" />
+          </Link>
+        </header>
 
-      <div className="relative">
-        {paths.map((node, index) => (
-          <div key={node.id} className="relative pb-8 last:pb-0">
-            {index !== paths.length - 1 && (
-              <div className="absolute left-6 top-16 w-0.5 h-full bg-gray-200"></div>
-            )}
+        {error ? (
+          <div className="mb-8 rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+            {error}
+          </div>
+        ) : null}
 
-            <div className="flex gap-6">
-              <div className={`w-12 h-12 rounded-full ${getStatusColor(node.status)} flex items-center justify-center flex-shrink-0 relative z-10 shadow-md`}>
-                {getStatusIcon(node.status)}
-              </div>
+        <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-12">
+          
+          {/* Main Content (Left) */}
+          <div className="lg:col-span-8 space-y-8">
+            {planResult ? (
+              <section>
+                <div className="mb-6 flex items-center justify-between">
+                  <h2 className="text-xl font-medium tracking-tight">为您生成的候选路线</h2>
+                  <button 
+                    onClick={() => setPlanResult(null)}
+                    className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+                  >
+                    取消并返回
+                  </button>
+                </div>
+                
+                <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="prose prose-sm prose-slate max-w-none">
+                    <MarkdownMessage content={planResult.planning_summary} />
+                  </div>
+                </div>
 
-              <div className={`flex-1 bg-white rounded-xl p-6 shadow-sm border-2 hover:shadow-md transition-shadow ${
-                node.recommendReason?.includes("优秀") || node.recommendReason?.includes("强")
-                  ? "border-emerald-200 bg-emerald-50/30"
-                  : node.recommendReason?.includes("提升") || node.recommendReason?.includes("AI建议")
-                  ? "border-orange-200 bg-orange-50/30"
-                  : "border-gray-200"
-              }`}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <h3 className="text-lg font-semibold text-gray-900">{node.title}</h3>
-                      <span
-                        className={`text-xs px-3 py-1 rounded-full font-medium ${
-                          node.status === "completed"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : node.status === "current"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {node.status === "completed"
-                          ? "已完成"
-                          : node.status === "current"
-                          ? "进行中"
-                          : "未解锁"}
-                      </span>
-                      {node.recommendReason?.includes("优秀") || node.recommendReason?.includes("强") ? (
-                        <span className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium">
-                          💪 发挥优势
+                <div className="space-y-6">
+                  {planResult.route_options.map((route) => (
+                    <article
+                      key={route.route_code}
+                      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
+                    >
+                      <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          {levelLabel[route.difficulty] ?? route.difficulty}
                         </span>
-                      ) : node.recommendReason?.includes("提升") || node.recommendReason?.includes("AI建议") ? (
-                        <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
-                          📈 成长课程
+                        <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          预计 {route.estimated_weeks} 周
                         </span>
-                      ) : null}
-                    </div>
-                    <p className="text-gray-600 mb-3">{node.description}</p>
+                      </div>
 
-                    {node.recommendReason && (
-                      <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-start gap-2">
-                          <Brain className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <p className="text-sm text-blue-900 font-medium mb-1">AI推荐理由</p>
-                            <p className="text-xs text-blue-800">{node.recommendReason}</p>
-                            {node.matchedAbilities && node.matchedAbilities.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {node.matchedAbilities.map((ability, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full"
-                                  >
-                                    {ability}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                      <h3 className="text-lg font-medium">{route.title}</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-slate-600">{route.summary}</p>
+
+                      <div className="mt-6">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">适合理由</h4>
+                        <div className="prose prose-sm prose-slate mt-2 max-w-none text-slate-600">
+                          <MarkdownMessage content={route.fit_reason} />
                         </div>
                       </div>
-                    )}
 
-                    <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
-                      <div className="flex items-center gap-1">
-                        <BookOpen className="w-4 h-4" />
-                        <span>{node.lessons} 节课</span>
+                      <div className="mt-6 border-t border-slate-100 pt-6">
+                        <h4 className="mb-4 text-sm font-medium">包含阶段 ({route.stages.length})</h4>
+                        <div className="space-y-3">
+                          {route.stages.map((stage, index) => (
+                            <div key={stage.stage_code} className="flex gap-4">
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
+                                {index + 1}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">{stage.title}</p>
+                                <p className="mt-1 text-sm text-slate-500">{stage.goal}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span>⏱️</span>
-                        <span>{node.duration}</span>
+
+                      <div className="mt-8">
+                        <button
+                          onClick={() => void handleActivateRoute(route)}
+                          disabled={activatingRouteCode === route.route_code}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:bg-slate-300"
+                        >
+                          <Route className="h-4 w-4" />
+                          {activatingRouteCode === route.route_code ? "正在激活..." : "激活此路线"}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <section>
+                <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-medium tracking-tight">
+                      {displayPath?.status === "active" ? "当前主路线" : "路线详情"}
+                    </h2>
+                    {displayPath ? (
+                      <p className="mt-1.5 text-sm text-slate-500">
+                        {displayPath.name} · 已完成 {displayedCompletedCount}/{displayedNodeCount} 个阶段
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-sm text-slate-500">还没有可展示的学习路线。</p>
+                    )}
+                  </div>
+
+                  {displayPath ? (
+                    <div className="text-right">
+                      <div className="text-3xl font-semibold tracking-tight text-slate-900">
+                        {Math.round(displayPath.progress_percent)}%
+                      </div>
+                      <div className="mt-1 text-xs font-medium text-slate-500">
+                        {statusLabel[displayPath.status] ?? "状态"}
                       </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
 
-                {node.status !== "locked" && node.progress !== undefined && (
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-700">学习进度</span>
-                      <span className="text-emerald-600 font-semibold">{node.progress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-emerald-400 to-teal-500 h-2 rounded-full transition-all"
-                        style={{ width: `${node.progress}%` }}
-                      ></div>
-                    </div>
+                {loading ? (
+                  <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-500">
+                    正在加载学习路径...
+                  </div>
+                ) : displayPath ? (
+                  <div className="space-y-6">
+                    {displayPath.nodes.map((node, index) => {
+                      const locked = node.status === "locked";
+                      const completed = node.status === "completed";
+                      const sessionId = node.assessment?.generated_session_id;
+                      const bankId = node.assessment?.generated_bank_id;
+
+                      return (
+                        <article
+                          key={node.node_id}
+                          className={`rounded-xl border bg-white p-6 shadow-sm transition-all ${
+                            completed ? "border-slate-200" : locked ? "border-slate-100 opacity-75" : "border-slate-300 ring-1 ring-slate-100"
+                          }`}
+                        >
+                          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex-1">
+                              <div className="mb-3 flex flex-wrap items-center gap-2">
+                                <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                                  阶段 {index + 1}
+                                </span>
+                                <span
+                                  className={`rounded-md px-2 py-1 text-[11px] font-medium ${
+                                    completed
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : locked
+                                      ? "bg-slate-100 text-slate-500"
+                                      : "bg-blue-50 text-blue-700"
+                                  }`}
+                                >
+                                  {completed ? "已完成" : locked ? "待解锁" : "进行中"}
+                                </span>
+                                <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                                  {Math.max(1, Math.round(node.estimated_minutes / 60))} 小时
+                                </span>
+                              </div>
+                              <h3 className="text-lg font-medium text-slate-900">{node.title}</h3>
+                              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                                {node.stage_goal || node.description || "按阶段推进学习任务，并完成对应练习与考核。"}
+                              </p>
+                              {node.recommended_reason && (
+                                <div className="mt-3 inline-flex rounded-md bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                                  <span className="mr-1 font-medium text-slate-700">推荐理由:</span>
+                                  {node.recommended_reason}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex w-full shrink-0 flex-col items-end sm:w-32">
+                              <span className="mb-2 text-xs font-medium text-slate-500">进度 {Math.round(node.progress_percent)}%</span>
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                                  style={{ width: `${Math.min(100, Math.max(0, Math.round(node.progress_percent)))}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-6 border-t border-slate-100 pt-6 lg:grid-cols-2">
+                            {/* Resources */}
+                            <div>
+                              <h4 className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-900">
+                                <BookOpen className="h-4 w-4 text-slate-400" />
+                                推荐资源
+                              </h4>
+                              {node.resources.length ? (
+                                <div className="space-y-3">
+                                  {node.resources.map((resource, resourceIndex) => (
+                                    <div key={`${node.node_id}-${resourceIndex}`} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3.5 transition-colors hover:bg-slate-50">
+                                      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                                        <span className="rounded border border-slate-100 bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500 shadow-sm">
+                                          {resource.source === "system" ? "系统资源" : "线上资源"}
+                                        </span>
+                                        {resource.category_name && (
+                                          <span className="rounded border border-slate-100 bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500 shadow-sm">
+                                            {resource.category_name}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-sm font-medium text-slate-900">{resource.title}</p>
+                                      {resource.description && (
+                                        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-slate-500" title={resource.description}>
+                                          {resource.description}
+                                        </p>
+                                      )}
+                                      {resource.external_url && (
+                                        <a
+                                          href={resource.external_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-600 transition-colors hover:text-slate-900"
+                                        >
+                                          打开链接
+                                          <ExternalLink className="h-3 w-3" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 py-6 text-center text-xs text-slate-500">
+                                  暂无可展示的阶段资源。
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Assessment */}
+                            <div>
+                              <h4 className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-900">
+                                <Clock3 className="h-4 w-4 text-slate-400" />
+                                阶段考核
+                              </h4>
+                              <div className="flex h-full flex-col justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+                                <div className="mb-6 space-y-2 text-sm text-slate-600">
+                                  <div className="flex justify-between border-b border-slate-200/60 pb-2">
+                                    <span className="text-slate-500">考核模式</span>
+                                    <span className="font-medium text-slate-900">{node.assessment?.mode === "generated_quiz" ? "AI生成测验" : (node.assessment?.mode ?? "未知")}</span>
+                                  </div>
+                                  <div className="flex justify-between border-b border-slate-200/60 pb-2">
+                                    <span className="text-slate-500">题目数量</span>
+                                    <span className="font-medium text-slate-900">{node.assessment?.question_count ?? 6} 题</span>
+                                  </div>
+                                  <div className="flex justify-between pb-1">
+                                    <span className="text-slate-500">通过分数</span>
+                                    <span className="font-medium text-slate-900">{node.assessment?.pass_score ?? 70} 分</span>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2.5">
+                                  {sessionId && bankId ? (
+                                    <button
+                                      onClick={() => navigate(`/practice?bank_id=${bankId}&session_id=${sessionId}`)}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+                                    >
+                                      继续本阶段练习
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => void handleGeneratePractice(node)}
+                                      disabled={locked || practiceNodeId === node.node_id}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:bg-slate-300"
+                                    >
+                                      <PlayCircle className="h-4 w-4" />
+                                      {practiceNodeId === node.node_id ? "正在生成题库..." : "生成题库并开始考核"}
+                                    </button>
+                                  )}
+
+                                  {!locked && !completed ? (
+                                    <button
+                                      onClick={() => void handleCompleteNode(node)}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                                    >
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      标记阶段完成
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-center">
+                    <p className="text-sm font-medium text-slate-900">暂无学习路线</p>
+                    <p className="mt-1 text-sm text-slate-500">请在右侧表单生成新的学习规划</p>
                   </div>
                 )}
+              </section>
+            )}
+          </div>
 
-                <div className="flex gap-3">
-                  {node.status === "current" && (
-                    <button
-                      onClick={() => void handleCompleteNode(node)}
-                      className="px-5 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium flex items-center gap-2"
-                    >
-                      <PlayCircle className="w-4 h-4" />
-                      标记完成
-                    </button>
-                  )}
+          {/* Sidebar (Right) */}
+          <div className="space-y-8 lg:col-span-4">
+            
+            {/* Generate Form */}
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-5">
+                <h3 className="flex items-center gap-2 font-medium text-slate-900">
+                  <Target className="h-4 w-4 text-slate-400" />
+                  生成新规划
+                </h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-slate-500">设定您的学习目标与时间，AI 将为您生成多条候选的学习路线。</p>
+              </div>
 
-                  {node.status === "completed" && (
-                    <button className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium">
-                      复习课程
-                    </button>
-                  )}
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">目标方向</label>
+                  <input
+                    value={form.target_role ?? ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, target_role: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 transition-colors focus:border-slate-400 focus:bg-white focus:outline-none"
+                    placeholder="例如：后端开发 / Python 入门"
+                  />
+                </div>
 
-                  {node.status === "locked" && (
-                    <div className="px-5 py-2.5 bg-gray-50 text-gray-400 rounded-lg font-medium flex items-center gap-2">
-                      <Lock className="w-4 h-4" />
-                      完成前置课程后解锁
-                    </div>
-                  )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">当前水平</label>
+                  <select
+                    value={form.current_level ?? "beginner"}
+                    onChange={(e) => setForm((prev) => ({ ...prev, current_level: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 transition-colors focus:border-slate-400 focus:bg-white focus:outline-none"
+                  >
+                    <option value="beginner">入门</option>
+                    <option value="intermediate">进阶</option>
+                    <option value="advanced">高级</option>
+                  </select>
+                </div>
 
-                  {node.status !== "locked" && (
-                    <button className="px-5 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                      查看详情
-                    </button>
-                  )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">每周投入时长 (小时)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={form.weekly_hours ?? 6}
+                    onChange={(e) => setForm((prev) => ({ ...prev, weekly_hours: Number(e.target.value) || 6 }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 transition-colors focus:border-slate-400 focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">资源偏好</label>
+                  <select
+                    value={form.preferred_resource_mode ?? "mixed"}
+                    onChange={(e) => setForm((prev) => ({ ...prev, preferred_resource_mode: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 transition-colors focus:border-slate-400 focus:bg-white focus:outline-none"
+                  >
+                    <option value="mixed">混合资源</option>
+                    <option value="system">优先系统资源</option>
+                    <option value="online">优先线上资源</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">候选路线数量</label>
+                  <select
+                    value={form.route_count ?? 3}
+                    onChange={(e) => setForm((prev) => ({ ...prev, route_count: Number(e.target.value) }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 transition-colors focus:border-slate-400 focus:bg-white focus:outline-none"
+                  >
+                    <option value={2}>2 条</option>
+                    <option value={3}>3 条</option>
+                    <option value={4}>4 条</option>
+                  </select>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => void handleGeneratePlan()}
+                    disabled={planning}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:bg-slate-300"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {planning ? "正在生成..." : "生成学习规划"}
+                  </button>
                 </div>
               </div>
-            </div>
+            </section>
+
+            {/* History Paths */}
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 flex items-center gap-2 font-medium text-slate-900">
+                <History className="h-4 w-4 text-slate-400" />
+                历史路线
+              </h3>
+              
+              <div className="space-y-2">
+                {historyPaths.length ? (
+                  historyPaths.map((item) => {
+                    const isSelected = displayPath?.id === item.id;
+                    const completedCount = item.nodes.filter((node) => node.status === "completed").length;
+                    
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => void handleOpenHistory(item.id)}
+                        className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                          isSelected
+                            ? "border-emerald-200 bg-emerald-50/50 shadow-sm"
+                            : "border-transparent hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className={`truncate text-sm font-medium ${isSelected ? 'text-emerald-900' : 'text-slate-900'}`}>{item.name}</p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-medium text-slate-500">
+                                {statusLabel[item.status] ?? item.status}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-500">
+                                进度 {Math.round(item.progress_percent)}%
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              完成 {completedCount}/{item.nodes.length} 阶段
+                            </p>
+                          </div>
+                          <ChevronRight className={`h-4 w-4 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-slate-300'}`} />
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="py-6 text-center text-xs text-slate-500">
+                    暂无历史路线
+                  </div>
+                )}
+              </div>
+            </section>
+            
           </div>
-        ))}
-      </div>
+        </div>
       </div>
     </div>
   );

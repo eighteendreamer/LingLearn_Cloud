@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.deps import CurrentUser, DBSession
 from app.core.response import success
 from app.modules.learning_path.schemas import (
+    LearningPathActivateRequest,
     LearningPathGenerateRequest,
     LearningPathNodeUpdateRequest,
     SkillProfileGenerateRequest,
@@ -53,6 +54,16 @@ async def get_active_learning_path(
     return success(data=result)
 
 
+@router.get("/users/me/learning-paths/history")
+async def list_learning_path_history(
+    current_user: CurrentUser,
+    session: DBSession,
+):
+    service = LearningPathService()
+    result = await service.list_learning_path_history(session, int(current_user.sub))
+    return success(data=result)
+
+
 @router.post("/users/me/learning-paths/generate")
 async def generate_learning_path(
     payload: LearningPathGenerateRequest,
@@ -62,6 +73,28 @@ async def generate_learning_path(
     service = LearningPathService()
     result = await service.generate_learning_path(session, int(current_user.sub), payload)
     return success(data=result, message="Learning path generated successfully.")
+
+
+@router.post("/users/me/learning-paths/plan")
+async def generate_learning_path_plan(
+    payload: LearningPathGenerateRequest,
+    current_user: CurrentUser,
+    session: DBSession,
+):
+    service = LearningPathService()
+    result = await service.generate_learning_path_plan(session, int(current_user.sub), payload)
+    return success(data=result, message="Learning path options generated successfully.")
+
+
+@router.post("/users/me/learning-paths/activate")
+async def activate_learning_path(
+    payload: LearningPathActivateRequest,
+    current_user: CurrentUser,
+    session: DBSession,
+):
+    service = LearningPathService()
+    result = await service.activate_learning_path(session, int(current_user.sub), payload)
+    return success(data=result, message="Learning path activated successfully.")
 
 
 @router.get("/users/me/learning-paths/{user_path_id}")
@@ -92,3 +125,20 @@ async def update_learning_path_node(
         payload,
     )
     return success(data=result)
+
+
+@router.post("/users/me/learning-paths/{user_path_id}/nodes/{node_id}/generate-practice")
+async def generate_learning_path_node_practice(
+    user_path_id: int,
+    node_id: int,
+    current_user: CurrentUser,
+    session: DBSession,
+):
+    service = LearningPathService()
+    result = await service.generate_node_practice(
+        session,
+        int(current_user.sub),
+        user_path_id,
+        node_id,
+    )
+    return success(data=result, message="Stage practice generated successfully.")

@@ -1,6 +1,9 @@
 import { apiRequest } from "./api";
 import type {
+  LearningPathActivatePayload,
   LearningPathGeneratePayload,
+  LearningPathNodePracticeGenerateResponse,
+  LearningPathPlanResponse,
   MonthlyReportResponse,
   PracticeAnswerResponse,
   PracticeQuestionResponse,
@@ -73,10 +76,32 @@ export async function fetchActiveLearningPath() {
   return apiRequest<UserLearningPathResponse | null>("/users/me/learning-paths/active");
 }
 
+export async function fetchLearningPathHistory() {
+  return apiRequest<UserLearningPathResponse[]>("/users/me/learning-paths/history");
+}
+
+export async function fetchLearningPathById(userPathId: number) {
+  return apiRequest<UserLearningPathResponse>(`/users/me/learning-paths/${userPathId}`);
+}
+
 export async function generateLearningPath(payload: LearningPathGeneratePayload = {}) {
   return apiRequest<UserLearningPathResponse>("/users/me/learning-paths/generate", {
     method: "POST",
     body: JSON.stringify({ current_level: "beginner", ...payload }),
+  });
+}
+
+export async function generateLearningPathPlan(payload: LearningPathGeneratePayload = {}) {
+  return apiRequest<LearningPathPlanResponse>("/users/me/learning-paths/plan", {
+    method: "POST",
+    body: JSON.stringify({ current_level: "beginner", ...payload }),
+  });
+}
+
+export async function activateLearningPath(payload: LearningPathActivatePayload) {
+  return apiRequest<UserLearningPathResponse>("/users/me/learning-paths/activate", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -95,6 +120,15 @@ export async function updateLearningPathNode(
     method: "PATCH",
     body: JSON.stringify({ status, progress_percent: progressPercent }),
   });
+}
+
+export async function generateLearningPathNodePractice(userPathId: number, nodeId: number) {
+  return apiRequest<LearningPathNodePracticeGenerateResponse>(
+    `/users/me/learning-paths/${userPathId}/nodes/${nodeId}/generate-practice`,
+    {
+      method: "POST",
+    }
+  );
 }
 
 export async function fetchMonthlyReports() {

@@ -492,6 +492,10 @@ export interface LearningPathNodeResponse {
   sort_order: number;
   recommended_reason: string | null;
   estimated_minutes: number;
+  stage_code?: string | null;
+  stage_goal?: string | null;
+  resources: LearningPathStageResourceResponse[];
+  assessment?: LearningPathStageAssessmentResponse | null;
 }
 
 export interface UserLearningPathResponse {
@@ -507,9 +511,68 @@ export interface UserLearningPathResponse {
   nodes: LearningPathNodeResponse[];
 }
 
+export interface LearningPathStageResourceResponse {
+  resource_type: string;
+  source: string;
+  title: string;
+  description?: string | null;
+  content_id?: number | null;
+  category_name?: string | null;
+  cover_url?: string | null;
+  video_url?: string | null;
+  external_url?: string | null;
+}
+
+export interface LearningPathStageAssessmentResponse {
+  mode: string;
+  question_count: number;
+  pass_score: number;
+  generated_bank_id?: number | null;
+  generated_session_id?: number | null;
+}
+
+export interface LearningPathPlanStageResponse {
+  stage_code: string;
+  title: string;
+  goal: string;
+  description?: string | null;
+  estimated_hours: number;
+  recommended_reason?: string | null;
+  resources: LearningPathStageResourceResponse[];
+  assessment?: LearningPathStageAssessmentResponse | null;
+}
+
+export interface LearningPathPlanRouteResponse {
+  route_code: string;
+  title: string;
+  summary: string;
+  fit_reason: string;
+  difficulty: string;
+  estimated_weeks: number;
+  stages: LearningPathPlanStageResponse[];
+}
+
+export interface LearningPathPlanResponse {
+  planning_summary: string;
+  route_options: LearningPathPlanRouteResponse[];
+}
+
+export interface LearningPathActivatePayload {
+  selected_route: LearningPathPlanRouteResponse;
+}
+
+export interface LearningPathNodePracticeGenerateResponse {
+  bank_id: number;
+  bank_title: string;
+  session_id: number;
+}
+
 export interface LearningPathGeneratePayload {
   target_role?: string | null;
   current_level?: string;
+  weekly_hours?: number;
+  route_count?: number;
+  preferred_resource_mode?: string;
 }
 
 // Reports

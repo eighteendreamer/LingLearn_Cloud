@@ -36,7 +36,14 @@ class LearningPathRepository:
             ("learning", "学习自驱", "计划制定、复盘与持续学习"),
         ]
         objects = [
-            SkillDimension(code=code, name=name, description=desc_text, sort_order=index, created_at=now, updated_at=now)
+            SkillDimension(
+                code=code,
+                name=name,
+                description=desc_text,
+                sort_order=index,
+                created_at=now,
+                updated_at=now,
+            )
             for index, (code, name, desc_text) in enumerate(seeds, start=1)
         ]
         session.add_all(objects)
@@ -69,7 +76,15 @@ class LearningPathRepository:
         )
         return list(result.all())
 
-    async def create_snapshot(self, session: AsyncSession, *, user_id: int, source_type: str, source_ref_id: int | None, scores: list[dict]) -> UserSkillSnapshot:
+    async def create_snapshot(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        source_type: str,
+        source_ref_id: int | None,
+        scores: list[dict],
+    ) -> UserSkillSnapshot:
         latest_version = await session.scalar(
             select(func.max(UserSkillSnapshot.snapshot_version)).where(UserSkillSnapshot.user_id == user_id)
         )
@@ -107,12 +122,30 @@ class LearningPathRepository:
         await session.refresh(snapshot)
         return snapshot
 
-    async def create_path_with_nodes(self, session: AsyncSession, *, user_id: int, snapshot_id: int | None, target_role: str | None, nodes: list[dict], ai_summary: str) -> UserLearningPath:
+    async def deactivate_active_paths(self, session: AsyncSession, user_id: int) -> None:
+        await session.execute(
+            update(UserLearningPath)
+            .where(UserLearningPath.user_id == user_id, UserLearningPath.status == "active")
+            .values(status="archived", updated_at=utc_now_naive())
+        )
+
+    async def create_path_with_nodes(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        snapshot_id: int | None,
+        target_role: str | None,
+        path_name: str,
+        path_description: str | None,
+        nodes: list[dict],
+        ai_summary: str,
+    ) -> UserLearningPath:
         now = utc_now_naive()
         path = LearningPath(
             path_type="personalized",
-            name=f"{target_role or '个性化'}学习路径",
-            description="根据能力画像和近期学习表现生成的学习路径",
+            name=path_name,
+            description=path_description,
             target_role=target_role,
             based_on_snapshot_id=snapshot_id,
             created_by=user_id,
@@ -129,7 +162,7 @@ class LearningPathRepository:
             node = LearningPathNode(
                 path_id=path.id,
                 course_id=item.get("course_id"),
-                node_type=item.get("node_type", "course"),
+                node_type=item.get("node_type", "stage"),
                 title=item["title"],
                 description=item.get("description"),
                 sort_order=index,
@@ -157,6 +190,7 @@ class LearningPathRepository:
         )
         session.add(user_path)
         await session.flush()
+
         session.add_all(
             [
                 UserLearningPathNode(
@@ -165,6 +199,7 @@ class LearningPathRepository:
                     status="unlocked" if index == 0 else "locked",
                     progress_percent=0,
                     unlocked_at=now if index == 0 else None,
+                    ai_feedback=nodes[index].get("ai_feedback") or None,
                     created_at=now,
                     updated_at=now,
                 )
@@ -183,6 +218,19 @@ class LearningPathRepository:
             .limit(1)
         )
 
+    async def list_user_paths(self, session: AsyncSession, user_id: int, limit: int = 12) -> list[UserLearningPath]:
+        result = await session.execute(
+            select(UserLearningPath)
+            .where(UserLearningPath.user_id == user_id)
+            .order_by(
+                UserLearningPath.status.asc(),
+                desc(UserLearningPath.updated_at),
+                desc(UserLearningPath.id),
+            )
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_user_path(self, session: AsyncSession, user_id: int, user_path_id: int) -> UserLearningPath | None:
         return await session.scalar(
             select(UserLearningPath).where(UserLearningPath.id == user_path_id, UserLearningPath.user_id == user_id)
@@ -200,9 +248,19 @@ class LearningPathRepository:
         )
         return list(result.all())
 
-    async def update_user_path_node(self, session: AsyncSession, user_path_id: int, node_id: int, *, status: str, progress_percent: float) -> bool:
+    async def update_user_path_node(
+        self,
+        session: AsyncSession,
+        user_path_id: int,
+        node_id: int,
+        *,
+        status: str,
+        progress_percent: float,
+    ) -> bool:
         now = utc_now_naive()
         values = {"status": status, "progress_percent": progress_percent, "updated_at": now}
+        if status == "unlocked":
+            values["unlocked_at"] = now
         if status == "in_progress":
             values["started_at"] = now
         if status == "completed":
@@ -211,6 +269,20 @@ class LearningPathRepository:
             update(UserLearningPathNode)
             .where(UserLearningPathNode.user_path_id == user_path_id, UserLearningPathNode.node_id == node_id)
             .values(**values)
+        )
+        return bool(result.rowcount)
+
+    async def update_user_path_node_feedback(
+        self,
+        session: AsyncSession,
+        user_path_id: int,
+        node_id: int,
+        ai_feedback: str | None,
+    ) -> bool:
+        result = await session.execute(
+            update(UserLearningPathNode)
+            .where(UserLearningPathNode.user_path_id == user_path_id, UserLearningPathNode.node_id == node_id)
+            .values(ai_feedback=ai_feedback, updated_at=utc_now_naive())
         )
         return bool(result.rowcount)
 
