@@ -16,6 +16,16 @@ import { Auth } from "./components/Auth";
 import { Create } from "./components/Create";
 import { ResourceCenter } from "./components/ResourceCenter";
 import { EditProfile } from "./components/EditProfile";
+import AdminLayout from "./components/admin/AdminLayout";
+import AdminLogin from "./components/admin/AdminLogin";
+import Dashboard from "./components/admin/Dashboard";
+import UserManagement from "./components/admin/UserManagement";
+import ContentManagement from "./components/admin/ContentManagement";
+import CommentManagement from "./components/admin/CommentManagement";
+import CategoryManagement from "./components/admin/CategoryManagement";
+import TagManagement from "./components/admin/TagManagement";
+import Statistics from "./components/admin/Statistics";
+import AdminSettings from "./components/admin/AdminSettings";
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +51,24 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     Component: Auth,
+  },
+  {
+    path: "/admin/login",
+    Component: AdminLogin,
+  },
+  {
+    path: "/admin",
+    Component: AdminLayout,
+    children: [
+      { path: "dashboard", Component: Dashboard },
+      { path: "users", Component: UserManagement },
+      { path: "contents", Component: ContentManagement },
+      { path: "comments", Component: CommentManagement },
+      { path: "categories", Component: CategoryManagement },
+      { path: "tags", Component: TagManagement },
+      { path: "statistics", Component: Statistics },
+      { path: "settings", Component: AdminSettings },
+    ],
   },
   {
     path: "*",

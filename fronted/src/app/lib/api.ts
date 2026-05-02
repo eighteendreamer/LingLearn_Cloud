@@ -90,3 +90,52 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   return envelope.data;
 }
+
+// 管理员专用的 API 请求函数
+export async function adminApiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const { auth = true, headers, body, ...rest } = options;
+  const requestHeaders = new Headers(headers);
+
+  if (auth) {
+    const adminToken = localStorage.getItem('admin_token');
+    if (adminToken) {
+      requestHeaders.set("Authorization", `Bearer ${adminToken}`);
+    }
+  }
+
+  if (body && !(body instanceof FormData) && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(buildApiUrl(path), {
+    ...rest,
+    headers: requestHeaders,
+    body,
+  });
+
+  const envelope = await parseEnvelope<T>(response);
+  const message =
+    envelope?.message || (response.ok ? "Request succeeded." : "Request failed.");
+
+  if (response.status === 401) {
+    // 管理员未授权，清除管理员 token 并跳转到登录页
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_refresh_token');
+    localStorage.removeItem('admin_user');
+    window.location.href = '/admin/login';
+  }
+
+  if (!response.ok) {
+    throw new ApiError(message, response.status, envelope?.code ?? response.status);
+  }
+
+  if (!envelope) {
+    throw new ApiError("Empty response from server.", response.status);
+  }
+
+  if (envelope.code !== 0) {
+    throw new ApiError(envelope.message, response.status, envelope.code);
+  }
+
+  return envelope.data;
+}

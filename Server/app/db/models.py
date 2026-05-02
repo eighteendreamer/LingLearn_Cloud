@@ -1,4 +1,5 @@
 from app.db.base import Base
+from app.modules.admin.models import AdminUser, AdminRole, AdminOperationLog
 from app.modules.ai_chat.models import AIChatSession, AIChatMessage
 from app.modules.ai_chat.workflow_models import AIWorkflowRun
 from app.modules.assessment.models import AssessmentSnapshot
@@ -31,6 +32,9 @@ __all__ = [
     "Base",
     "User",
     "UserRefreshToken",
+    "AdminUser",
+    "AdminRole",
+    "AdminOperationLog",
     "MediaAsset",
     "ContentCategory",
     "Tag",
