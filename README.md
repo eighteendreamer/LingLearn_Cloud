@@ -781,15 +781,15 @@ LingLearn_Cloud/
 5. **启动服务**
    ```bash
    # 开发模式
-   uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+   uvicorn app.main:app --reload --host 127.0.0.1 --port 8003
    
    # 或使用 Python 直接运行
    python -m app.main
    ```
 
 6. **访问 API 文档**
-   - Swagger UI: http://127.0.0.1:8000/docs
-   - ReDoc: http://127.0.0.1:8000/redoc
+   - Swagger UI: http://127.0.0.1:8003/docs
+   - ReDoc: http://127.0.0.1:8003/redoc
 
 ### 前端启动
 
@@ -832,7 +832,7 @@ APP_ENV=dev                          # dev, staging, production
 DEBUG=true
 API_V1_PREFIX=/api/v1
 HOST=127.0.0.1
-PORT=8000
+PORT=8003
 
 # ============ 日志和 CORS ============
 LOG_LEVEL=INFO                       # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -901,7 +901,7 @@ OPENAPI_URL=/openapi.json            # OpenAPI JSON 路径
 ```env
 # ============ API 配置 ============
 VITE_API_BASE_URL=/api/v1            # API 基础路径
-VITE_API_PROXY_TARGET=http://127.0.0.1:8000  # 开发代理目标（仅开发环境）
+VITE_API_PROXY_TARGET=http://127.0.0.1:8003  # 开发代理目标（仅开发环境）
 ```
 
 ### 环境变量说明
@@ -1414,7 +1414,7 @@ docker build -t linglearn-cloud-server:latest .
 ```bash
 docker run -d \
   --name linglearn-server \
-  -p 8000:8000 \
+  -p 8003:8003 \
   --env-file .env \
   --restart unless-stopped \
   linglearn-cloud-server:latest
@@ -1428,7 +1428,7 @@ services:
   api:
     build: ./Server
     ports:
-      - "8000:8000"
+      - "8003:8003"
     env_file:
       - ./Server/.env
     depends_on:
@@ -1487,7 +1487,7 @@ User=www-data
 WorkingDirectory=/path/to/Server
 Environment="PATH=/path/to/venv/bin"
 EnvironmentFile=/path/to/Server/.env
-ExecStart=/path/to/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+ExecStart=/path/to/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8003 --workers 4
 Restart=always
 RestartSec=10
 
@@ -1518,7 +1518,7 @@ sudo apt-get install supervisor
 2. **创建配置文件** `/etc/supervisor/conf.d/linglearn.conf`
 ```ini
 [program:linglearn]
-command=/path/to/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+command=/path/to/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8003 --workers 4
 directory=/path/to/Server
 user=www-data
 autostart=true
@@ -1570,7 +1570,7 @@ server {
 
     # API 代理
     location /api {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8003;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1669,7 +1669,7 @@ python scripts/init_admin.py
 ```nginx
 upstream linglearn_backend {
     least_conn;
-    server 127.0.0.1:8000 weight=1;
+    server 127.0.0.1:8003 weight=1;
     server 127.0.0.1:8001 weight=1;
     server 127.0.0.1:8002 weight=1;
 }
@@ -1701,7 +1701,7 @@ server {
 scrape_configs:
   - job_name: 'linglearn'
     static_configs:
-      - targets: ['localhost:8000']
+      - targets: ['localhost:8003']
 ```
 
 #### Grafana 仪表盘

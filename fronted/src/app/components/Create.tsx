@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Image, Upload, Video } from "lucide-react";
+import { ArrowLeft, Image, Upload, Video, X, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
 import { ApiError } from "../lib/api";
@@ -25,6 +25,8 @@ export function Create() {
   const [description, setDescription] = useState("");
   const [categories, setCategories] = useState<ContentCategoryResponse[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [customTags, setCustomTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,6 +104,7 @@ export function Create() {
       const coverAsset = await uploadFileToStorage(coverImage, "content_cover");
 
       setSubmitMessage("封面上传完成，正在发布内容...");
+      const hashtags = selectedCategory ? [selectedCategory.name, ...customTags] : [...customTags];
       await createContent({
         title: title.trim(),
         summary: description.trim() || null,
@@ -109,7 +112,7 @@ export function Create() {
         cover_asset_id: coverAsset.asset_id,
         primary_media_asset_id: videoAsset.asset_id,
         content_type: "short_video",
-        hashtags: [selectedCategory.name],
+        hashtags: Array.from(new Set(hashtags)).filter(Boolean),
       });
 
       setSubmitMessage("作品发布成功，正在返回首页...");
@@ -183,7 +186,7 @@ export function Create() {
 
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">分类标签</label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 mb-3">
               {isLoadingCategories ? (
                 <span className="text-sm text-gray-500">正在加载分类...</span>
               ) : null}
@@ -197,7 +200,7 @@ export function Create() {
                   onClick={() => setSelectedCategoryId(item.id)}
                   className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                     selectedCategoryId === item.id
-                      ? "bg-emerald-500 text-white"
+                      ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
@@ -205,6 +208,46 @@ export function Create() {
                 </button>
               ))}
             </div>
+            
+            <div className="flex flex-wrap items-center gap-2">
+              {customTags.map((tag) => (
+                <span key={tag} className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 border border-emerald-100">
+                  #{tag}
+                  <button
+                    type="button"
+                    onClick={() => setCustomTags(tags => tags.filter(t => t !== tag))}
+                    className="ml-1 text-emerald-500 hover:text-emerald-700 focus:outline-none bg-emerald-100 hover:bg-emerald-200 rounded-full p-0.5 transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              
+              {customTags.length < 5 && (
+                <div className="relative flex items-center">
+                  <Plus className="absolute left-2.5 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = tagInput.trim();
+                        if (val && !customTags.includes(val) && !categories.some(c => c.name === val)) {
+                          setCustomTags([...customTags, val]);
+                          setTagInput("");
+                        }
+                      }
+                    }}
+                    placeholder="自定义标签，按回车添加..."
+                    className="w-52 rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    maxLength={15}
+                  />
+                </div>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-gray-400">还可添加 {5 - customTags.length} 个自定义标签，不仅限于分类</p>
           </div>
 
           <div>

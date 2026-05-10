@@ -6,8 +6,21 @@ import { ApiError } from "../lib/api";
 import { loginWithPassword, registerWithPassword } from "../lib/account";
 import { hasSession } from "../lib/session";
 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Button } from "./ui/button";
+
 export function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -31,7 +44,7 @@ export function Auth() {
   const validateForm = () => {
     const nextErrors: Record<string, string> = {};
 
-    if (isLogin) {
+    if (activeTab === "login") {
       if (!formData.account.trim()) {
         nextErrors.account = "请输入用户名或邮箱";
       }
@@ -55,7 +68,7 @@ export function Auth() {
       nextErrors.password = "密码至少 6 个字符";
     }
 
-    if (!isLogin) {
+    if (activeTab === "register") {
       if (!formData.confirmPassword) {
         nextErrors.confirmPassword = "请再次输入密码";
       } else if (formData.password !== formData.confirmPassword) {
@@ -77,7 +90,7 @@ export function Auth() {
 
     setIsLoading(true);
     try {
-      if (isLogin) {
+      if (activeTab === "login") {
         await loginWithPassword({
           account: formData.account.trim(),
           password: formData.password,
@@ -113,8 +126,8 @@ export function Auth() {
     }
   };
 
-  const switchMode = () => {
-    setIsLogin((previous) => !previous);
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "login" | "register");
     setErrors({});
     setSubmitError("");
     setFormData({
@@ -127,225 +140,248 @@ export function Auth() {
   };
 
   return (
-    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-emerald-400 via-teal-400 to-blue-500 px-4 py-8 md:flex md:items-center md:justify-center">
-      <div className="mx-auto w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4 hover:scale-105 transition-transform">
-            <GraduationCap className="w-10 h-10 text-emerald-600" />
+    <div className="flex min-h-screen bg-white">
+      {/* 左侧横幅 (70%) */}
+      <div className="hidden lg:flex lg:w-[70%] bg-gradient-to-br from-emerald-400 via-teal-400 to-blue-500 relative flex-col justify-between p-12 overflow-hidden">
+        {/* 背景光效 */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-white/10 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
+        <div className="absolute top-[30%] right-[10%] w-[20%] h-[20%] rounded-full bg-emerald-300/30 blur-2xl pointer-events-none" />
+        
+        <div className="relative z-10 max-w-3xl mt-10">
+          <div className="bg-white/20 w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md mb-8 border border-white/20 shadow-xl">
+            <GraduationCap className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">智能学习平台</h1>
-          <p className="text-emerald-100">登录后即可同步你的学习档案与个性化设置</p>
+          <h1 className="text-4xl xl:text-6xl font-bold tracking-tight text-white mb-6 leading-tight drop-shadow-sm">
+            探索知识的边界 <br /> 
+            <span className="text-emerald-50">点亮你的学习之旅</span>
+          </h1>
+          <p className="text-lg xl:text-xl text-emerald-50 max-w-xl leading-relaxed font-medium">
+            加入我们的智能学习平台，体验个性化内容推荐与 AI 辅助学习。记录每一次进步，与优秀的学习者共同成长。
+          </p>
         </div>
+        
+        <div className="relative z-10 text-emerald-100/80 text-sm font-medium">
+          &copy; {new Date().getFullYear()} LingLearn Cloud. All rights reserved.
+        </div>
+      </div>
 
-        <div className="bg-white rounded-3xl shadow-2xl p-8">
-          <div className="flex mb-8 bg-gray-100 rounded-xl p-1">
-            <button
-              onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isLogin
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-              type="button"
-            >
-              登录
-            </button>
-            <button
-              onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                !isLogin
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-              type="button"
-            >
-              注册
-            </button>
+      {/* 右侧表单 (30%) */}
+      <div className="w-full lg:w-[30%] min-w-[380px] flex flex-col justify-center bg-white p-6 sm:p-10 lg:p-12 shadow-[-20px_0_40px_-10px_rgba(0,0,0,0.05)] z-10 relative overflow-y-auto">
+        <div className="w-full max-w-[400px] mx-auto">
+          {/* 移动端顶部标题 (仅在窄屏显示) */}
+          <div className="lg:hidden flex flex-col items-center mb-8 space-y-4">
+            <div className="bg-emerald-50 p-3.5 rounded-2xl shadow-sm border border-emerald-100">
+              <GraduationCap className="w-10 h-10 text-emerald-600" />
+            </div>
+            <div className="text-center space-y-1">
+              <h1 className="text-2xl font-bold tracking-tight text-gray-900">智能学习平台</h1>
+              <p className="text-sm text-gray-500">
+                登录后即可同步你的学习档案
+              </p>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {isLogin ? (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  账号
-                </label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    name="account"
-                    value={formData.account}
-                    onChange={handleInputChange}
-                    placeholder="请输入用户名或邮箱"
-                    className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                      errors.account ? "border-red-500" : "border-gray-200"
-                    }`}
-                  />
-                </div>
-                {errors.account && (
-                  <p className="mt-1.5 text-sm text-red-500">{errors.account}</p>
-                )}
-              </div>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    用户名
-                  </label>
+          {/* 桌面端顶部标题 */}
+          <div className="hidden lg:block mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">欢迎回来</h2>
+            <p className="text-sm text-gray-500 font-medium">登录或注册以继续访问您的账号</p>
+          </div>
+
+          <Tabs
+            defaultValue="login"
+            value={activeTab}
+            onValueChange={handleTabChange}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-2 mb-8 bg-gray-100 rounded-xl p-1 h-auto">
+              <TabsTrigger 
+                value="login" 
+                className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
+              >
+                登录
+              </TabsTrigger>
+              <TabsTrigger 
+                value="register" 
+                className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
+              >
+                注册
+              </TabsTrigger>
+            </TabsList>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <TabsContent value="login" className="m-0 space-y-5 outline-none">
+                <div className="space-y-2">
+                  <Label htmlFor="account" className="text-gray-700 font-medium">账号</Label>
                   <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="account"
+                      type="text"
+                      name="account"
+                      value={formData.account}
+                      onChange={handleInputChange}
+                      placeholder="用户名或邮箱"
+                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.account ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                    />
+                  </div>
+                  {errors.account && (
+                    <p className="text-sm font-medium text-red-500">{errors.account}</p>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="register" className="m-0 space-y-5 outline-none">
+                <div className="space-y-2">
+                  <Label htmlFor="username" className="text-gray-700 font-medium">用户名</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="username"
                       type="text"
                       name="username"
                       value={formData.username}
                       onChange={handleInputChange}
                       placeholder="请输入用户名"
-                      className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                        errors.username ? "border-red-500" : "border-gray-200"
-                      }`}
+                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.username ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
                     />
                   </div>
                   {errors.username && (
-                    <p className="mt-1.5 text-sm text-red-500">{errors.username}</p>
+                    <p className="text-sm font-medium text-red-500">{errors.username}</p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    邮箱
-                  </label>
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-gray-700 font-medium">邮箱</Label>
                   <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="email"
                       type="email"
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
                       placeholder="请输入邮箱"
-                      className={`w-full pl-12 pr-4 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                        errors.email ? "border-red-500" : "border-gray-200"
-                      }`}
+                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.email ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
                     />
                   </div>
                   {errors.email && (
-                    <p className="mt-1.5 text-sm text-red-500">{errors.email}</p>
+                    <p className="text-sm font-medium text-red-500">{errors.email}</p>
                   )}
                 </div>
-              </>
-            )}
+              </TabsContent>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                密码
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="请输入密码"
-                  className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                    errors.password ? "border-red-500" : "border-gray-200"
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((previous) => !previous)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-gray-700 font-medium">密码</Label>
+                  {activeTab === "login" && (
+                    <Link
+                      to="/forgot-password"
+                      className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline transition-colors"
+                      onClick={(e) => e.preventDefault()}
+                    >
+                      忘记密码？
+                    </Link>
                   )}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="mt-1.5 text-sm text-red-500">{errors.password}</p>
-              )}
-            </div>
-
-            {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  确认密码
-                </label>
+                </div>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
                     onChange={handleInputChange}
-                    placeholder="请再次输入密码"
-                    className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                      errors.confirmPassword ? "border-red-500" : "border-gray-200"
-                    }`}
+                    placeholder="请输入密码"
+                    className={`pl-10 pr-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.password ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowConfirmPassword((previous) => !previous)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
                   >
-                    {showConfirmPassword ? (
+                    {showPassword ? (
                       <EyeOff className="w-5 h-5" />
                     ) : (
                       <Eye className="w-5 h-5" />
                     )}
                   </button>
                 </div>
-                {errors.confirmPassword && (
-                  <p className="mt-1.5 text-sm text-red-500">{errors.confirmPassword}</p>
+                {errors.password && (
+                  <p className="text-sm font-medium text-red-500">{errors.password}</p>
                 )}
               </div>
-            )}
 
-            {submitError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                {submitError}
+              {activeTab === "register" && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">确认密码</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      placeholder="请再次输入密码"
+                      className={`pl-10 pr-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.confirmPassword ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="text-sm font-medium text-red-500">{errors.confirmPassword}</p>
+                  )}
+                </div>
+              )}
+
+              {submitError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {submitError}
+                </div>
+              )}
+
+              <div className="pt-4">
+                <Button 
+                  type="submit" 
+                  className="w-full py-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl text-base font-bold shadow-md hover:shadow-lg transition-all border-0" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? "处理中..." : activeTab === "login" ? "登录" : "注册"}
+                </Button>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-bold hover:shadow-lg hover:scale-105 transition-all disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {isLoading ? "处理中..." : isLogin ? "登录" : "注册"}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-gray-600 text-sm">
-              {isLogin ? "还没有账号？" : "已经有账号了？"}
-              <button
-                onClick={switchMode}
-                className="text-emerald-600 hover:text-emerald-700 font-medium ml-1 transition-colors"
-                type="button"
-              >
-                {isLogin ? "立即注册" : "立即登录"}
-              </button>
-            </p>
-          </div>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
+              <div className="mt-8">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-4 bg-white text-gray-400 font-medium">或</span>
+                  </div>
+                </div>
+                
+                <Button 
+                  variant="outline" 
+                  asChild 
+                  className="w-full mt-6 py-6 bg-white text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50 hover:text-gray-900 border-gray-200 shadow-sm transition-all"
+                >
+                  <Link to="/">以游客身份继续</Link>
+                </Button>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500">或</span>
-              </div>
-            </div>
-            <Link
-              to="/"
-              className="mt-4 w-full py-3.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 hover:scale-105 transition-all flex items-center justify-center gap-2"
-            >
-              游客模式访问
-            </Link>
-          </div>
+            </form>
+          </Tabs>
         </div>
       </div>
     </div>

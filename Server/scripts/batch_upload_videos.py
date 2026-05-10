@@ -277,7 +277,7 @@ def list_videos(source_dir: Path) -> list[Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch register users and upload videos to LingLearn Cloud.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000/api/v1", help="Backend API base URL.")
+    parser.add_argument("--base-url", default="http://127.0.0.1:8003/api/v1", help="Backend API base URL.")
     parser.add_argument("--source-dir", default=str(DEFAULT_SOURCE_DIR), help="Directory containing video files.")
     parser.add_argument("--account-prefix", default="seeduser", help="Username/email prefix for generated accounts.")
     parser.add_argument("--account-count", type=int, default=4, help="How many accounts to generate.")

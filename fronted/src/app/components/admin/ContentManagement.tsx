@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/app/components/ui/select';
 import { Badge } from '@/app/components/ui/badge';
-import { Search, CheckCircle, XCircle, Eye, Trash2 } from 'lucide-react';
+import { Search, CheckCircle, XCircle, Eye, Heart, MessageCircle, Trash2 } from 'lucide-react';
 import { adminApiRequest } from '@/app/lib/api';
 import { toast } from 'sonner';
 
@@ -191,10 +191,10 @@ export default function ContentManagement() {
                         <Badge variant="outline">{content.publish_status}</Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="text-xs space-y-1">
-                          <div>👁 {content.views_count}</div>
-                          <div>❤️ {content.likes_count}</div>
-                          <div>💬 {content.comments_count}</div>
+                        <div className="text-xs space-y-1 text-gray-600">
+                          <div className="flex items-center gap-1.5"><Eye className="h-3 w-3" /> {content.views_count}</div>
+                          <div className="flex items-center gap-1.5"><Heart className="h-3 w-3" /> {content.likes_count}</div>
+                          <div className="flex items-center gap-1.5"><MessageCircle className="h-3 w-3" /> {content.comments_count}</div>
                         </div>
                       </TableCell>
                       <TableCell>

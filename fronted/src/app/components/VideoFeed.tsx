@@ -660,7 +660,7 @@ export function VideoFeed() {
     }
     const timer = window.setInterval(() => {
       void submitWatchProgress(currentVideo.id);
-    }, 8000);
+    }, 8003);
     return () => window.clearInterval(timer);
   }, [currentVideo?.id, isPlaying]);
 

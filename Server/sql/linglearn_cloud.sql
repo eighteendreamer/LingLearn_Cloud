@@ -1967,7 +1967,7 @@ INSERT INTO `questions` VALUES (13, 5, NULL, NULL, NULL, 'single_choice', 'easy'
 INSERT INTO `questions` VALUES (14, 6, NULL, NULL, NULL, 'single_choice', 'easy', '在 HTTP 协议中，GET 和 POST 请求的主要区别是什么？', 'GET 请求用于获取资源，参数附加在 URL 中，有长度限制且不安全；POST 请求用于提交数据，参数放在请求体中，更安全且无长度限制。', 'B', 'published', 1, '2026-05-02 19:09:28', '2026-05-02 19:09:28');
 INSERT INTO `questions` VALUES (15, 6, NULL, NULL, NULL, 'single_choice', 'easy', '以下哪个是 URL 的正确组成部分？', '一个完整的 URL 通常包含协议、主机名、端口（可选）、路径、查询参数（可选）和片段（可选）。', 'A', 'published', 2, '2026-05-02 19:09:29', '2026-05-02 19:09:29');
 INSERT INTO `questions` VALUES (16, 6, NULL, NULL, NULL, 'single_choice', 'easy', '在客户端-服务器模型中，以下哪项描述是正确的？', '客户端发起请求，服务器接收请求并返回响应。服务器是提供资源的中心，客户端是请求资源的终端。', 'C', 'published', 3, '2026-05-02 19:09:29', '2026-05-02 19:09:29');
-INSERT INTO `questions` VALUES (17, 6, NULL, NULL, NULL, 'single_choice', 'medium', '在本地开发环境中，使用 Python 内置模块启动一个简单的 HTTP 服务器的正确命令是？', 'Python 3 使用 `python -m http.server` 启动当前目录的 HTTP 服务器，默认端口为 8000。', 'A', 'published', 4, '2026-05-02 19:09:30', '2026-05-02 19:09:30');
+INSERT INTO `questions` VALUES (17, 6, NULL, NULL, NULL, 'single_choice', 'medium', '在本地开发环境中，使用 Python 内置模块启动一个简单的 HTTP 服务器的正确命令是？', 'Python 3 使用 `python -m http.server` 启动当前目录的 HTTP 服务器，默认端口为 8003。', 'A', 'published', 4, '2026-05-02 19:09:30', '2026-05-02 19:09:30');
 INSERT INTO `questions` VALUES (18, 6, NULL, NULL, NULL, 'single_choice', 'easy', '在命令行中，用于列出当前目录下所有文件和文件夹的命令是？', '在 Unix/Linux/macOS 中使用 `ls`，在 Windows 中使用 `dir`。本题假设通用 Unix 环境。', 'A', 'published', 5, '2026-05-02 19:09:30', '2026-05-02 19:09:30');
 
 -- ----------------------------

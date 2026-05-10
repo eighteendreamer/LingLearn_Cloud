@@ -1,6 +1,8 @@
 import { Component, ReactNode } from "react";
 import { Link } from "react-router";
 
+import { AlertTriangle } from "lucide-react";
+
 interface Props {
   children: ReactNode;
 }
@@ -25,7 +27,9 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="h-screen w-screen flex items-center justify-center bg-black">
           <div className="text-center px-4">
-            <div className="text-6xl mb-4">⚠️</div>
+            <div className="flex justify-center mb-6 text-amber-500">
+              <AlertTriangle className="h-20 w-20" />
+            </div>
             <h1 className="text-2xl font-bold text-white mb-4">出错了</h1>
             <p className="text-gray-400 mb-6">{this.state.error?.message || "未知错误"}</p>
             <Link

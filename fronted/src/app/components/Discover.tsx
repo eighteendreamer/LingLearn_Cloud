@@ -1,4 +1,4 @@
-import { Hash, Play, Search, TrendingUp } from "lucide-react";
+import { Code, Laptop, Calculator, Database, Bot, Settings, Flame, Sparkles, Hash, Play, Search, TrendingUp } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   fetchContentCategories,
@@ -15,13 +15,13 @@ import type {
 } from "../lib/types";
 
 const categoryDecor = [
-  { icon: "🐍", color: "from-blue-500 to-cyan-500" },
-  { icon: "💻", color: "from-purple-500 to-pink-500" },
-  { icon: "🧮", color: "from-emerald-500 to-teal-500" },
-  { icon: "🗄️", color: "from-orange-500 to-red-500" },
-  { icon: "🤖", color: "from-indigo-500 to-purple-500" },
-  { icon: "⚙️", color: "from-green-500 to-emerald-500" },
-] as const;
+  { icon: <Code className="h-6 w-6" />, color: "from-blue-500 to-cyan-500" },
+  { icon: <Laptop className="h-6 w-6" />, color: "from-purple-500 to-pink-500" },
+  { icon: <Calculator className="h-6 w-6" />, color: "from-emerald-500 to-teal-500" },
+  { icon: <Database className="h-6 w-6" />, color: "from-orange-500 to-red-500" },
+  { icon: <Bot className="h-6 w-6" />, color: "from-indigo-500 to-purple-500" },
+  { icon: <Settings className="h-6 w-6" />, color: "from-green-500 to-emerald-500" },
+];
 
 type RankingItem = {
   id: number;
@@ -190,7 +190,7 @@ export function Discover() {
 
         <div className="mb-8">
           <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
-            <span className="text-xl">🔥</span>
+            <Flame className="h-6 w-6 text-orange-500" />
             热门分类
           </h2>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -214,8 +214,8 @@ export function Discover() {
                         isActive ? "ring-4 ring-white/70" : ""
                       }`}
                     >
-                      <div className="mb-2 text-2xl">{decor.icon}</div>
-                      <div className="text-[1.75rem] font-semibold leading-none">{category.name}</div>
+                      <div className="mb-2 flex items-center justify-center h-8 w-8 rounded-full bg-white/20 backdrop-blur-sm">{decor.icon}</div>
+                      <div className="text-[1.75rem] font-semibold leading-none mt-1">{category.name}</div>
                       <div className="mt-2 text-base text-white/90">{formatCompactCount(count)} 视频</div>
                     </button>
                   );
@@ -310,7 +310,7 @@ export function Discover() {
 
         <div>
           <h2 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900">
-            <span className="text-xl">✨</span>
+            <Sparkles className="h-6 w-6 text-yellow-500" />
             推荐视频
           </h2>
           {loading ? (

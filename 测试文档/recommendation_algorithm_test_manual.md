@@ -116,7 +116,7 @@ GET /api/v1/feed/videos?recommend_type=for_you
 
 ```powershell
 cd G:\Code_Warehouse\LingLearn_Cloud\Server
-E:\Interpreter\Python_Conda\envs\ai-service\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+E:\Interpreter\Python_Conda\envs\ai-service\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8003 --reload
 ```
 
 ### 4.2 内容前置要求
@@ -238,7 +238,7 @@ POST /api/v1/auth/login
 ### 7.2 curl 示例
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/auth/login" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/auth/login" ^
   -H "Content-Type: application/json" ^
   -d "{\"account\":\"seeduser_01\",\"password\":\"SeedUser123\",\"device_id\":\"algo-test-device-01\"}"
 ```
@@ -260,7 +260,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/auth/login" ^
 ### 8.1 请求接口
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
   -H "Authorization: Bearer 你的token"
 ```
 
@@ -366,7 +366,7 @@ LIMIT 20;
 3. 直接请求：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
   -H "Authorization: Bearer 新用户token"
 ```
 
@@ -425,7 +425,7 @@ LIMIT 20;
 #### 观看进度
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/watch-progress" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/contents/内容ID/watch-progress" ^
   -H "Authorization: Bearer 你的token" ^
   -H "Content-Type: application/json" ^
   -d "{\"watch_seconds\":20,\"watch_progress\":80,\"last_position_seconds\":20,\"completed\":false}"
@@ -434,21 +434,21 @@ curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/watch-progress" ^
 #### 点赞
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/like" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/contents/内容ID/like" ^
   -H "Authorization: Bearer 你的token"
 ```
 
 #### 收藏
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/favorite" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/contents/内容ID/favorite" ^
   -H "Authorization: Bearer 你的token"
 ```
 
 #### 评论
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/comments" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/contents/内容ID/comments" ^
   -H "Authorization: Bearer 你的token" ^
   -H "Content-Type: application/json" ^
   -d "{\"content\":\"推荐算法测试评论\"}"
@@ -457,7 +457,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/comments" ^
 #### 分享
 
 ```powershell
-curl -X POST "http://127.0.0.1:8000/api/v1/contents/内容ID/share" ^
+curl -X POST "http://127.0.0.1:8003/api/v1/contents/内容ID/share" ^
   -H "Authorization: Bearer 你的token" ^
   -H "Content-Type: application/json" ^
   -d "{\"share_channel\":\"internal\"}"
@@ -675,7 +675,7 @@ LIMIT 10;
 先请求一次：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
   -H "Authorization: Bearer 你的token"
 ```
 
@@ -700,7 +700,7 @@ curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" 
 再次请求：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
   -H "Authorization: Bearer 你的token"
 ```
 
@@ -815,14 +815,14 @@ LIMIT 20;
 ### 19.1 请求关注流
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=following&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=following&limit=10" ^
   -H "Authorization: Bearer 你的token"
 ```
 
 ### 19.2 请求推荐流
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10" ^
   -H "Authorization: Bearer 你的token"
 ```
 
@@ -859,7 +859,7 @@ curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10" 
 不带 token 请求：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/v1/feed/videos?recommend_type=for_you&limit=10"
+curl "http://127.0.0.1:8003/api/v1/feed/videos?recommend_type=for_you&limit=10"
 ```
 
 预期：

@@ -9,6 +9,9 @@ import {
   Star,
   Target,
   Trophy,
+  Award,
+  Check,
+  ArrowRight
 } from "lucide-react";
 
 import {
@@ -26,7 +29,7 @@ type ReportViewModel = {
   completedCourses: number;
   averageScore: number;
   rank: number | null;
-  achievements: { title: string; description: string; icon: string; color: string }[];
+  achievements: { title: string; description: string; icon: React.ReactNode; color: string }[];
   strengths: string[];
   improvements: string[];
   summary: string;
@@ -40,13 +43,13 @@ function formatMonth(month: string) {
   return year && value ? `${year}年${Number(value)}月` : month;
 }
 
-function iconLabel(icon: string | null | undefined) {
+function getAchievementIcon(icon: string | null | undefined) {
   const normalized = (icon || "").toLowerCase();
-  if (normalized.includes("star")) return "★";
-  if (normalized.includes("trophy")) return "奖";
-  if (normalized.includes("target")) return "目";
-  if (normalized.includes("report")) return "报";
-  return "成";
+  if (normalized.includes("star")) return <Star className="h-10 w-10 text-emerald-600" />;
+  if (normalized.includes("trophy")) return <Trophy className="h-10 w-10 text-yellow-500" />;
+  if (normalized.includes("target")) return <Target className="h-10 w-10 text-blue-500" />;
+  if (normalized.includes("report")) return <FileText className="h-10 w-10 text-emerald-500" />;
+  return <Award className="h-10 w-10 text-purple-500" />;
 }
 
 function colorTokenToClass(colorToken: string | null | undefined) {
@@ -75,14 +78,14 @@ function toViewModel(report: MonthlyReportResponse): ReportViewModel {
     ? report.achievements.map((achievement) => ({
         title: achievement.title,
         description: achievement.description || "系统根据本月学习数据生成的阶段亮点。",
-        icon: iconLabel(achievement.icon),
+        icon: getAchievementIcon(achievement.icon),
         color: colorTokenToClass(achievement.color_token),
       }))
     : [
         {
           title: "完成月度复盘",
           description: "系统已根据本月学习数据生成阶段总结。",
-          icon: "报",
+          icon: <FileText className="h-10 w-10 text-emerald-500" />,
           color: "from-emerald-50 to-teal-50 border-emerald-300",
         },
       ];
@@ -300,7 +303,7 @@ export function LearningReport() {
                       key={`${achievement.title}-${index}`}
                       className={`transform rounded-xl border bg-gradient-to-br p-5 transition-transform hover:scale-105 ${achievement.color}`}
                     >
-                      <div className="mb-3 text-4xl">{achievement.icon}</div>
+                      <div className="mb-4 flex items-center justify-center h-16 w-16 rounded-2xl bg-white/60 backdrop-blur-sm shadow-sm">{achievement.icon}</div>
                       <div className="mb-1 font-semibold text-gray-900">{achievement.title}</div>
                       <div className="text-sm text-gray-600">{achievement.description}</div>
                     </div>
@@ -335,7 +338,7 @@ export function LearningReport() {
                   <ul className="space-y-3">
                     {currentReport.strengths.map((strength, index) => (
                       <li key={`${strength}-${index}`} className="flex items-start gap-3">
-                        <span className="text-lg font-bold text-emerald-500">✓</span>
+                        <Check className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
                         <span className="flex-1 text-gray-700">{strength}</span>
                       </li>
                     ))}
@@ -350,7 +353,7 @@ export function LearningReport() {
                   <ul className="space-y-3">
                     {currentReport.improvements.map((improvement, index) => (
                       <li key={`${improvement}-${index}`} className="flex items-start gap-3">
-                        <span className="text-lg font-bold text-blue-500">→</span>
+                        <ArrowRight className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
                         <span className="flex-1 text-gray-700">{improvement}</span>
                       </li>
                     ))}

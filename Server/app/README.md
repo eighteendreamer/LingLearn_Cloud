@@ -9,5 +9,5 @@ This directory contains the FastAPI application skeleton and shared infrastructu
 3. Start the service with:
 
 ```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8003
 ```
