@@ -186,7 +186,7 @@ export function Create() {
 
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">分类标签</label>
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2">
               {isLoadingCategories ? (
                 <span className="text-sm text-gray-500">正在加载分类...</span>
               ) : null}
@@ -207,9 +207,7 @@ export function Create() {
                   {item.name}
                 </button>
               ))}
-            </div>
-            
-            <div className="flex flex-wrap items-center gap-2">
+              
               {customTags.map((tag) => (
                 <span key={tag} className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 border border-emerald-100">
                   #{tag}
@@ -224,7 +222,7 @@ export function Create() {
               ))}
               
               {customTags.length < 5 && (
-                <div className="relative flex items-center">
+                <div className="relative flex items-center flex-none">
                   <Plus className="absolute left-2.5 h-4 w-4 text-gray-400" />
                   <input
                     type="text"
@@ -241,7 +239,7 @@ export function Create() {
                       }
                     }}
                     placeholder="自定义标签，按回车添加..."
-                    className="w-52 rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    className="w-40 rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm md:w-44"
                     maxLength={15}
                   />
                 </div>
