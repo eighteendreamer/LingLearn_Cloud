@@ -142,26 +142,27 @@ export function Auth() {
   return (
     <div className="flex min-h-screen bg-white">
       {/* 左侧横幅 (70%) */}
-      <div className="hidden lg:flex lg:w-[70%] bg-gradient-to-br from-emerald-400 via-teal-400 to-blue-500 relative flex-col justify-between p-12 overflow-hidden">
-        {/* 背景光效 */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-white/10 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute top-[30%] right-[10%] w-[20%] h-[20%] rounded-full bg-emerald-300/30 blur-2xl pointer-events-none" />
+      <div className="hidden lg:flex lg:w-[70%] bg-slate-950 relative flex-col justify-between p-12 overflow-hidden">
+        {/* 现代背景光效 - 网格与柔和光晕 */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/20 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-teal-500/20 blur-[120px] pointer-events-none" />
+        <div className="absolute top-[40%] right-[10%] w-[30%] h-[30%] rounded-full bg-blue-500/20 blur-[100px] pointer-events-none" />
         
         <div className="relative z-10 max-w-3xl mt-10">
-          <div className="bg-white/20 w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md mb-8 border border-white/20 shadow-xl">
-            <GraduationCap className="w-10 h-10 text-white" />
+          <div className="bg-white/10 w-16 h-16 rounded-2xl flex items-center justify-center backdrop-blur-md mb-8 border border-white/10 shadow-2xl">
+            <GraduationCap className="w-10 h-10 text-emerald-400" />
           </div>
           <h1 className="text-4xl xl:text-6xl font-bold tracking-tight text-white mb-6 leading-tight drop-shadow-sm">
             探索知识的边界 <br /> 
-            <span className="text-emerald-50">点亮你的学习之旅</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">点亮你的学习之旅</span>
           </h1>
-          <p className="text-lg xl:text-xl text-emerald-50 max-w-xl leading-relaxed font-medium">
+          <p className="text-lg xl:text-xl text-slate-300 max-w-xl leading-relaxed font-medium">
             加入我们的智能学习平台，体验个性化内容推荐与 AI 辅助学习。记录每一次进步，与优秀的学习者共同成长。
           </p>
         </div>
         
-        <div className="relative z-10 text-emerald-100/80 text-sm font-medium">
+        <div className="relative z-10 text-slate-400 text-sm font-medium">
           &copy; {new Date().getFullYear()} LingLearn Cloud. All rights reserved.
         </div>
       </div>
