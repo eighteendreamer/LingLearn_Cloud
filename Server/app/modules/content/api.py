@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.deps import CurrentUser, DBSession, OptionalCurrentUser, Pagination
 from app.core.response import success
@@ -69,6 +69,16 @@ async def get_content_detail(
         viewer_user_id=int(current_user.sub) if current_user is not None else None,
     )
     return success(data=data.model_dump(mode="json"))
+
+
+@contents_router.get("/{content_id}/stream.m3u8", include_in_schema=False)
+async def get_content_hls_manifest(
+    content_id: int,
+    session: DBSession,
+):
+    service = ContentService()
+    manifest = await service.get_hls_manifest(session, content_id=content_id)
+    return Response(content=manifest, media_type="application/vnd.apple.mpegurl")
 
 
 @contents_router.get("/{content_id}/quizzes")

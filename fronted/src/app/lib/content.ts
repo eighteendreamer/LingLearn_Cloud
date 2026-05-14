@@ -19,6 +19,12 @@ import type {
   SearchContentsResponse,
 } from "./types";
 
+type RequestOptions = {
+  signal?: AbortSignal;
+  cache?: boolean;
+  cacheTtlMs?: number;
+};
+
 export async function createContent(payload: ContentCreatePayload) {
   return apiRequest<ContentVideoResponse>("/contents", {
     method: "POST",
@@ -42,6 +48,7 @@ export async function fetchFeedVideos(
   cursor?: string | null,
   recommendType = "for_you",
   categoryId?: number | null,
+  options: RequestOptions = {},
 ) {
   const search = new URLSearchParams();
   search.set("limit", "10");
@@ -52,7 +59,7 @@ export async function fetchFeedVideos(
   if (categoryId) {
     search.set("category_id", String(categoryId));
   }
-  return apiRequest<FeedVideosResponse>(`/feed/videos?${search.toString()}`);
+  return apiRequest<FeedVideosResponse>(`/feed/videos?${search.toString()}`, options);
 }
 
 export async function fetchSearchContents(params: {
@@ -60,7 +67,7 @@ export async function fetchSearchContents(params: {
   categoryId?: number | null;
   page?: number;
   pageSize?: number;
-}) {
+}, options: RequestOptions = {}) {
   const search = new URLSearchParams();
   search.set("page", String(params.page ?? 1));
   search.set("page_size", String(params.pageSize ?? 20));
@@ -70,7 +77,7 @@ export async function fetchSearchContents(params: {
   if (params.categoryId) {
     search.set("category_id", String(params.categoryId));
   }
-  return apiRequest<SearchContentsResponse>(`/search/contents?${search.toString()}`);
+  return apiRequest<SearchContentsResponse>(`/search/contents?${search.toString()}`, options);
 }
 
 export async function likeContent(contentId: number) {

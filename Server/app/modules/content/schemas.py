@@ -65,6 +65,7 @@ class ContentVideoResponse(BaseModel):
     category: ContentCategoryResponse | None = None
     cover_url: str | None = None
     video_url: str | None = None
+    hls_manifest_url: str | None = None
     duration_seconds: int | None = None
     bvid: str | None = None
     interaction: ContentInteractionResponse

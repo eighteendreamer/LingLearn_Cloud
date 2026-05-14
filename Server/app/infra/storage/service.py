@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.infra.storage.minio_client import MinIOClient
 
 
@@ -54,6 +56,28 @@ class StorageService:
 
     async def stat_uploaded_object(self, *, object_key: str) -> dict:
         return await self.minio_client.stat_object(object_key=object_key)
+
+    async def object_exists(self, *, object_key: str) -> bool:
+        return await self.minio_client.object_exists(object_key=object_key)
+
+    async def download_object_to_path(self, *, object_key: str, target_path: str | Path) -> None:
+        await self.minio_client.download_file(object_key=object_key, target_path=target_path)
+
+    async def upload_file(
+        self,
+        *,
+        object_key: str,
+        file_path: str | Path,
+        content_type: str | None = None,
+    ) -> dict:
+        return await self.minio_client.upload_file(
+            object_key=object_key,
+            file_path=file_path,
+            content_type=content_type,
+        )
+
+    async def read_text_object(self, *, object_key: str, encoding: str = "utf-8") -> str:
+        return await self.minio_client.read_text_object(object_key=object_key, encoding=encoding)
 
     def build_public_url(self, object_key: str) -> str | None:
         return self.minio_client.build_public_url(object_key)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -7,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import PaginationParams, build_page_response
 from app.common.utils import utc_now_naive
+from app.core.config import get_settings
 from app.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
 from app.infra.cache.redis_client import RedisCacheClient, redis_cache_client
 from app.infra.storage.service import StorageService
+from app.infra.video.streaming_service import VideoStreamingService
 from app.modules.content.repository import ContentRepository
 from app.modules.content.schemas import (
     ContentAuthorResponse,
@@ -50,7 +53,9 @@ class ContentService:
     ) -> None:
         self.repository = repository or ContentRepository()
         self.storage_service = storage_service or StorageService()
+        self.video_streaming_service = VideoStreamingService(self.storage_service)
         self.cache_client = cache_client or redis_cache_client
+        self.settings = get_settings()
         self.recommendation_service = recommendation_service or RecommendationService(
             content_repository=self.repository,
         )
@@ -123,6 +128,22 @@ class ContentService:
         if row is None:
             raise NotFoundError(message="Content not found.")
         return await self._build_content_video_response(row)
+
+    async def get_hls_manifest(self, session: AsyncSession, *, content_id: int) -> str:
+        row = await self.repository.get_content_detail_row(
+            session,
+            content_id=content_id,
+            viewer_user_id=None,
+        )
+        if row is None:
+            raise NotFoundError(message="Content not found.")
+        if row["external_video_url"] or not row["video_object_key"]:
+            raise NotFoundError(message="HLS stream is not available for this content.")
+        if not await self.video_streaming_service.has_hls_manifest(object_key=row["video_object_key"]):
+            raise NotFoundError(message="HLS stream is not available for this content.")
+        return await self.video_streaming_service.build_signed_manifest(
+            object_key=row["video_object_key"],
+        )
 
     async def update_content(
         self,
@@ -210,7 +231,7 @@ class ContentService:
             )
         has_more = len(rows) > query.limit
         trimmed = rows[: query.limit]
-        items = [await self._build_content_video_response(row) for row in trimmed]
+        items = await asyncio.gather(*(self._build_content_video_response(row) for row in trimmed))
         next_cursor = None
         if has_more and trimmed:
             last_row = trimmed[-1]
@@ -230,21 +251,20 @@ class ContentService:
             offset=pagination.offset,
             limit=pagination.page_size,
         )
-        items: list[UserWorkListItemResponse] = []
-        for row in rows:
+        async def build_item(row: Any) -> UserWorkListItemResponse:
             cover_url = await self.storage_service.build_access_url(
                 object_key=row["cover_object_key"],
                 public_url=row["cover_public_url"],
             )
-            items.append(
-                UserWorkListItemResponse(
-                    id=row["id"],
-                    title=row["title"],
-                    summary=row["summary"],
-                    cover_url=cover_url,
-                    published_at=row["published_at"],
-                )
+            return UserWorkListItemResponse(
+                id=row["id"],
+                title=row["title"],
+                summary=row["summary"],
+                cover_url=cover_url,
+                published_at=row["published_at"],
             )
+
+        items = await asyncio.gather(*(build_item(row) for row in rows))
         return build_page_response(items, total, pagination)
 
     async def search_contents(
@@ -264,7 +284,7 @@ class ContentService:
             offset=pagination.offset,
             limit=pagination.page_size,
         )
-        items = [await self._build_content_video_response(row) for row in rows]
+        items = await asyncio.gather(*(self._build_content_video_response(row) for row in rows))
         return build_page_response(items, total, pagination)
 
     async def list_user_favorites(
@@ -280,13 +300,13 @@ class ContentService:
             offset=pagination.offset,
             limit=pagination.page_size,
         )
-        items = [
-            ContentFavoriteItemResponse(
+        async def build_favorite_item(row: Any) -> ContentFavoriteItemResponse:
+            return ContentFavoriteItemResponse(
                 content=await self._build_content_video_response(row),
                 favorited_at=row["favorited_at"],
             )
-            for row in rows
-        ]
+
+        items = await asyncio.gather(*(build_favorite_item(row) for row in rows))
         return build_page_response(items, total, pagination)
 
     async def list_user_watch_history(
@@ -302,8 +322,8 @@ class ContentService:
             offset=pagination.offset,
             limit=pagination.page_size,
         )
-        items = [
-            ContentWatchHistoryItemResponse(
+        async def build_history_item(row: Any) -> ContentWatchHistoryItemResponse:
+            return ContentWatchHistoryItemResponse(
                 content=await self._build_content_video_response(row),
                 watch_seconds=row["history_watch_seconds"],
                 watch_progress=float(row["history_watch_progress"]),
@@ -311,8 +331,8 @@ class ContentService:
                 completed=bool(row["history_completed"]),
                 last_viewed_at=row["history_last_viewed_at"],
             )
-            for row in rows
-        ]
+
+        items = await asyncio.gather(*(build_history_item(row) for row in rows))
         return build_page_response(items, total, pagination)
 
     async def like_content(
@@ -846,11 +866,15 @@ class ContentService:
         )
         if row["external_video_url"]:
             video_url = row["external_video_url"]
+            hls_manifest_url = None
         else:
             video_url = await self.storage_service.build_access_url(
                 object_key=row["video_object_key"],
                 public_url=row["video_public_url"],
             )
+            hls_manifest_url = None
+            if await self.video_streaming_service.has_hls_manifest(object_key=row["video_object_key"]):
+                hls_manifest_url = f"{self.settings.api_v1_prefix}/contents/{row['id']}/stream.m3u8"
 
         category = None
         if row["category_id"] is not None:
@@ -874,6 +898,7 @@ class ContentService:
             category=category,
             cover_url=cover_url,
             video_url=video_url,
+            hls_manifest_url=hls_manifest_url,
             duration_seconds=row["duration_seconds"],
             bvid=row["bvid"],
             interaction=ContentInteractionResponse(

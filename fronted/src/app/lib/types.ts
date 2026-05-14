@@ -235,6 +235,7 @@ export interface ContentVideoResponse {
   category: ContentCategoryResponse | null;
   cover_url: string | null;
   video_url: string | null;
+  hls_manifest_url: string | null;
   duration_seconds: number | null;
   bvid: string | null;
   interaction: ContentInteractionResponse;

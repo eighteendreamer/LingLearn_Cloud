@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = Field(...)
     host: str = Field(...)
     port: int = Field(...)
+    uvicorn_workers: int = Field(default=3)
 
     log_level: str = Field(...)
     cors_origins: str = Field(...)

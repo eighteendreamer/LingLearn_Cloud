@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import PaginationParams, build_page_response
@@ -38,7 +40,7 @@ class SearchService:
             offset=pagination.offset,
             limit=pagination.page_size,
         )
-        items = [await self._build_content_video_response(row) for row in rows]
+        items = await asyncio.gather(*(self._build_content_video_response(row) for row in rows))
         return build_page_response(items, total, pagination)
 
     async def _build_content_video_response(self, row) -> ContentVideoResponse:

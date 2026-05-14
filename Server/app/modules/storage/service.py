@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.utils import utc_now_naive
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.infra.storage.service import StorageService as InfraStorageService
+from app.infra.video.streaming_service import VideoStreamingService
 from app.modules.storage.repository import StorageRepository
 from app.modules.storage.schemas import (
     StorageCompleteMultipartUploadRequest,
@@ -82,9 +83,11 @@ class StorageAppService:
         self,
         repository: StorageRepository | None = None,
         infra_service: InfraStorageService | None = None,
+        video_streaming_service: VideoStreamingService | None = None,
     ) -> None:
         self.repository = repository or StorageRepository()
         self.infra_service = infra_service or InfraStorageService()
+        self.video_streaming_service = video_streaming_service or VideoStreamingService(self.infra_service)
 
     async def presign_upload(
         self,
@@ -140,6 +143,9 @@ class StorageAppService:
                 raise NotFoundError(message="Uploaded asset not found.")
 
             object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
+            if asset.asset_type == "video":
+                await self.video_streaming_service.prepare_streaming_assets(object_key=asset.object_key)
+                object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
             asset.file_size = object_info["size"]
             asset.status = "active"
             asset.public_url = self.infra_service.build_public_url(asset.object_key)
@@ -250,6 +256,9 @@ class StorageAppService:
                 parts=normalized_parts,
             )
             object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
+            if asset.asset_type == "video":
+                await self.video_streaming_service.prepare_streaming_assets(object_key=asset.object_key)
+                object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
             asset.file_size = object_info["size"]
             asset.status = "active"
             asset.public_url = self.infra_service.build_public_url(asset.object_key)

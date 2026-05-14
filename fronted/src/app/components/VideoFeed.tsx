@@ -75,7 +75,23 @@ type CommentThread = {
   replies: ContentCommentResponse[];
 };
 
+type ManagedHlsPlayer = {
+  destroy: () => void;
+};
+
 const INTERACTION_SYNC_INTERVAL_MS = 10000;
+
+type FeedSnapshot = {
+  videos: ContentVideoResponse[];
+  nextCursor: string | null;
+  hasMoreVideos: boolean;
+  currentIndex: number;
+};
+
+const feedSnapshots: Record<FeedMode, FeedSnapshot | null> = {
+  for_you: null,
+  following: null,
+};
 
 function formatCount(value: number) {
   if (value >= 10000) {
@@ -171,19 +187,19 @@ export function VideoFeed() {
   const currentUserId = currentSession?.userId ?? null;
   const currentUserDisplayName = currentSession?.currentUser?.profile.display_name ?? "我";
   const currentUserAvatarUrl = null;
-  const [videos, setVideos] = useState<ContentVideoResponse[]>([]);
+  const [videos, setVideos] = useState<ContentVideoResponse[]>(() => feedSnapshots.for_you?.videos ?? []);
   const [feedMode, setFeedMode] = useState<FeedMode>("for_you");
   const [interactionState, setInteractionState] = useState<Record<number, VideoInteractionState>>({});
   const [followState, setFollowState] = useState<Record<number, boolean>>({});
   const [resolvedDurations, setResolvedDurations] = useState<Record<number, number>>({});
   const [syncQueue, setSyncQueue] = useState<InteractionSyncQueue>(() => readInteractionSyncQueue());
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !feedSnapshots.for_you?.videos.length);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMoreVideos, setHasMoreVideos] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(() => feedSnapshots.for_you?.nextCursor ?? null);
+  const [hasMoreVideos, setHasMoreVideos] = useState(() => feedSnapshots.for_you?.hasMoreVideos ?? false);
   const [errorMessage, setErrorMessage] = useState("");
   const [actionMessage, setActionMessage] = useState("");
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(() => feedSnapshots.for_you?.currentIndex ?? 0);
   const [isMuted, setIsMuted] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -213,11 +229,13 @@ export function VideoFeed() {
   const [submittingQuizId, setSubmittingQuizId] = useState<number | null>(null);
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const hlsPlayerRefs = useRef<Record<number, ManagedHlsPlayer | null>>({});
   const touchStartY = useRef(0);
   const previousActiveVideoIdRef = useRef<number | null>(null);
   const watchReportedSecondsRef = useRef<Record<number, number>>({});
   const syncQueueRef = useRef(syncQueue);
   const isFlushingQueueRef = useRef(false);
+  const skipNextSnapshotWriteRef = useRef(false);
 
   const filteredVideos = useMemo(() => {
     if (searchResults) {
@@ -369,6 +387,127 @@ export function VideoFeed() {
     setHasMoreVideos(options?.hasMore ?? false);
   };
 
+  const clearVideoSource = (video: HTMLVideoElement | null) => {
+    if (!video) {
+      return;
+    }
+    if (video.getAttribute("src")) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+  };
+
+  const destroyHlsPlayer = (index: number) => {
+    const player = hlsPlayerRefs.current[index];
+    if (!player) {
+      return;
+    }
+    player.destroy();
+    hlsPlayerRefs.current[index] = null;
+  };
+
+  const attachDirectVideoSource = (
+    index: number,
+    video: HTMLVideoElement,
+    sourceUrl: string | null | undefined,
+  ) => {
+    destroyHlsPlayer(index);
+    const normalizedUrl = sourceUrl?.trim();
+    if (!normalizedUrl) {
+      clearVideoSource(video);
+      return;
+    }
+    if (video.getAttribute("src") !== normalizedUrl) {
+      video.pause();
+      video.setAttribute("src", normalizedUrl);
+      video.load();
+    }
+  };
+
+  const attachHlsVideoSource = async (
+    index: number,
+    video: HTMLVideoElement,
+    item: ContentVideoResponse,
+    isActive: () => boolean,
+  ) => {
+    const manifestUrl = item.hls_manifest_url?.trim();
+    const fallbackUrl = item.video_url?.trim() || null;
+    if (!manifestUrl) {
+      attachDirectVideoSource(index, video, fallbackUrl);
+      return;
+    }
+
+    destroyHlsPlayer(index);
+    clearVideoSource(video);
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      if (!isActive()) {
+        return;
+      }
+      video.setAttribute("src", manifestUrl);
+      video.load();
+      return;
+    }
+
+    const { default: Hls } = await import("hls.js");
+    if (!isActive()) {
+      return;
+    }
+    if (!Hls.isSupported()) {
+      attachDirectVideoSource(index, video, fallbackUrl);
+      return;
+    }
+
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+    });
+    hlsPlayerRefs.current[index] = hls;
+    hls.attachMedia(video);
+    hls.loadSource(manifestUrl);
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data?.fatal) {
+        return;
+      }
+      destroyHlsPlayer(index);
+      attachDirectVideoSource(index, video, fallbackUrl);
+      if (index === currentIndex && isPlaying) {
+        void video.play().catch(() => {});
+      }
+    });
+  };
+
+  useEffect(() => {
+    const snapshot = feedSnapshots[feedMode];
+    skipNextSnapshotWriteRef.current = true;
+    if (!snapshot) {
+      return;
+    }
+
+    setVideos(snapshot.videos);
+    syncVideoDerivedState(snapshot.videos);
+    setNextCursor(snapshot.nextCursor);
+    setHasMoreVideos(snapshot.hasMoreVideos);
+    setCurrentIndex(Math.min(snapshot.currentIndex, Math.max(snapshot.videos.length - 1, 0)));
+    setErrorMessage("");
+    setIsLoading(false);
+  }, [feedMode]);
+
+  useEffect(() => {
+    if (skipNextSnapshotWriteRef.current) {
+      skipNextSnapshotWriteRef.current = false;
+      return;
+    }
+
+    feedSnapshots[feedMode] = {
+      videos,
+      nextCursor,
+      hasMoreVideos,
+      currentIndex: Math.min(currentIndex, Math.max(videos.length - 1, 0)),
+    };
+  }, [currentIndex, feedMode, hasMoreVideos, nextCursor, videos]);
+
   const handleVideoMetadataLoaded = (contentId: number, element: HTMLVideoElement | null) => {
     if (!element) {
       return;
@@ -415,11 +554,17 @@ export function VideoFeed() {
 
   useEffect(() => {
     let cancelled = false;
+    const snapshot = feedSnapshots[feedMode];
+    const controller = new AbortController();
 
     async function loadFeed() {
       try {
-        setIsLoading(true);
-        const response = await fetchFeedVideos(undefined, feedMode);
+        if (!snapshot?.videos.length) {
+          setIsLoading(true);
+        }
+        const response = await fetchFeedVideos(undefined, feedMode, undefined, {
+          signal: controller.signal,
+        });
         if (cancelled) {
           return;
         }
@@ -429,11 +574,20 @@ export function VideoFeed() {
           hasMore: response.has_more,
         });
         setErrorMessage("");
+        setActionMessage("");
       } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (cancelled) {
           return;
         }
-        setErrorMessage(error instanceof Error ? error.message : "加载首页失败");
+        const message = error instanceof Error ? error.message : "加载首页失败";
+        if (snapshot?.videos.length) {
+          setActionMessage(message);
+        } else {
+          setErrorMessage(message);
+        }
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -444,6 +598,7 @@ export function VideoFeed() {
     void loadFeed();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [feedMode]);
 
@@ -455,15 +610,22 @@ export function VideoFeed() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     async function loadSearchResults() {
       try {
-        const response = await fetchSearchContents({ keyword, pageSize: 20 });
+        const response = await fetchSearchContents(
+          { keyword, pageSize: 20 },
+          { signal: controller.signal },
+        );
         if (cancelled) {
           return;
         }
         setSearchResults(response.list);
         syncVideoDerivedState(response.list);
       } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (cancelled) {
           return;
         }
@@ -475,11 +637,13 @@ export function VideoFeed() {
     void loadSearchResults();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [searchQuery]);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     async function loadMoreFeed() {
       if (!nextCursor || !hasMoreVideos || isLoading || isLoadingMore || isCommentOpen) {
@@ -490,7 +654,9 @@ export function VideoFeed() {
       }
       try {
         setIsLoadingMore(true);
-        const response = await fetchFeedVideos(nextCursor, feedMode);
+        const response = await fetchFeedVideos(nextCursor, feedMode, undefined, {
+          signal: controller.signal,
+        });
         if (cancelled) {
           return;
         }
@@ -500,6 +666,9 @@ export function VideoFeed() {
           hasMore: response.has_more,
         });
       } catch {
+        if (controller.signal.aborted) {
+          return;
+        }
         // best effort load more
       } finally {
         if (!cancelled) {
@@ -511,8 +680,25 @@ export function VideoFeed() {
     void loadMoreFeed();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [currentIndex, feedMode, filteredVideos.length, hasMoreVideos, isCommentOpen, isLoading, isLoadingMore, nextCursor]);
+
+  useEffect(() => {
+    let active = true;
+    const video = videoRefs.current[currentIndex];
+    const item = filteredVideos[currentIndex];
+    if (!video || !item) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void attachHlsVideoSource(currentIndex, video, item, () => active);
+    return () => {
+      active = false;
+    };
+  }, [currentIndex, filteredVideos]);
 
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
@@ -526,6 +712,26 @@ export function VideoFeed() {
       }
     });
   }, [currentIndex, isPlaying, videos.length]);
+
+  useEffect(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (!video || index === currentIndex) {
+        return;
+      }
+
+      destroyHlsPlayer(index);
+      clearVideoSource(video);
+    });
+  }, [currentIndex, filteredVideos.length]);
+
+  useEffect(() => {
+    return () => {
+      Object.keys(hlsPlayerRefs.current).forEach((key) => {
+        destroyHlsPlayer(Number(key));
+      });
+      videoRefs.current.forEach((video) => clearVideoSource(video));
+    };
+  }, []);
 
   useEffect(() => {
     videoRefs.current.forEach((video) => {
@@ -991,7 +1197,7 @@ export function VideoFeed() {
     );
   }
 
-  if (errorMessage) {
+  if (errorMessage && !videos.length) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-6">
         <div className="max-w-md rounded-2xl border border-red-100 bg-white p-6 text-center shadow-sm">
@@ -1139,6 +1345,8 @@ export function VideoFeed() {
           {filteredVideos.map((video, index) => {
             const state = interactionState[video.id] ?? buildInitialInteractionState(video);
             const isFollowing = followState[video.author.user_id] ?? video.author.is_following;
+            const hasPlayableVideo = Boolean(video.video_url || video.hls_manifest_url);
+            const videoPreloadMode = index === currentIndex ? "metadata" : "none";
 
             return (
               <div
@@ -1146,7 +1354,7 @@ export function VideoFeed() {
                 className="relative flex h-screen w-screen items-center justify-center bg-black"
                 onClick={() => setIsPlaying((previous) => !previous)}
               >
-                {video.video_url ? (
+                {hasPlayableVideo ? (
                   <>
                     <div
                       className="absolute inset-0 bg-cover bg-center opacity-70 blur-2xl scale-110"
@@ -1160,10 +1368,10 @@ export function VideoFeed() {
                         handleVideoMetadataLoaded(video.id, event.currentTarget)
                       }
                       className="absolute inset-0 h-full w-full object-contain"
-                      src={video.video_url}
                       loop
                       playsInline
                       poster={video.cover_url ?? undefined}
+                      preload={videoPreloadMode}
                     />
                   </>
                 ) : (
