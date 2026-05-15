@@ -13,22 +13,27 @@ class Course(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "courses"
     __table_args__ = (
         Index("idx_courses_category_status", "category_id", "status"),
-        Index("idx_courses_instructor_status", "instructor_id", "status"),
+        Index("idx_courses_created_by_status", "created_by", "status"),
         Index("idx_courses_status_created", "status", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    instructor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    instructor_id: Mapped[int | None] = mapped_column("created_by", ForeignKey("users.id"), nullable=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("content_categories.id"), nullable=True)
     cover_asset_id: Mapped[int | None] = mapped_column(ForeignKey("media_assets.id"), nullable=True)
-    level: Mapped[str] = mapped_column(String(20), nullable=False, default="beginner")
-    duration_minutes: Mapped[int] = mapped_column(nullable=False, default=0)
+    course_type: Mapped[str] = mapped_column(String(32), nullable=False, default="recorded")
+    level: Mapped[str] = mapped_column("difficulty", String(20), nullable=False, default="beginner")
+    duration_minutes: Mapped[int] = mapped_column("estimated_minutes", nullable=False, default=0)
     lesson_count: Mapped[int] = mapped_column(nullable=False, default=0)
     enrollment_count: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0)
-    rating: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    completion_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    rating: Mapped[float] = mapped_column("average_rating", nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class CourseLesson(Base, TimestampMixin, SoftDeleteMixin):

@@ -65,13 +65,16 @@ class CourseService:
                 CourseListItemResponse(
                     id=row["id"],
                     title=row["title"],
-                    description=row["description"],
+                    description=row["summary"] or row["description"],
                     instructor=CourseInstructorResponse(
                         user_id=row["instructor_id"],
                         display_name=row["instructor_name"],
                         avatar_url=None,
                     ),
-                    category=CourseCategoryResponse(id=row["category_id"], name="") if row["category_id"] else None,
+                    category=CourseCategoryResponse(
+                        id=row["category_id"],
+                        name=row["category_name"] or "",
+                    ) if row["category_id"] else None,
                     cover_url=cover_url,
                     level=row["level"],
                     duration_minutes=row["duration_minutes"],
@@ -135,7 +138,10 @@ class CourseService:
                 display_name=row["instructor_name"],
                 avatar_url=None,
             ),
-            category=CourseCategoryResponse(id=row["category_id"], name="") if row["category_id"] else None,
+            category=CourseCategoryResponse(
+                id=row["category_id"],
+                name=row["category_name"] or "",
+            ) if row["category_id"] else None,
             cover_url=cover_url,
             level=row["level"],
             duration_minutes=row["duration_minutes"],

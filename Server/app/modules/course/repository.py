@@ -13,6 +13,7 @@ class CourseRepository:
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[dict], int]:
+        from app.modules.content.models import ContentCategory
         from app.modules.storage.models import MediaAsset
         from app.modules.user.models import UserProfile
 
@@ -20,6 +21,7 @@ class CourseRepository:
             select(
                 Course.id,
                 Course.title,
+                Course.summary,
                 Course.description,
                 Course.instructor_id,
                 Course.category_id,
@@ -29,11 +31,13 @@ class CourseRepository:
                 Course.lesson_count,
                 Course.enrollment_count,
                 Course.rating,
+                ContentCategory.name.label("category_name"),
                 UserProfile.display_name.label("instructor_name"),
                 MediaAsset.object_key.label("cover_object_key"),
                 MediaAsset.public_url.label("cover_public_url"),
             )
             .join(UserProfile, Course.instructor_id == UserProfile.user_id)
+            .outerjoin(ContentCategory, Course.category_id == ContentCategory.id)
             .outerjoin(MediaAsset, Course.cover_asset_id == MediaAsset.id)
             .where(Course.deleted_at.is_(None))
             .where(Course.status == "published")
@@ -58,6 +62,7 @@ class CourseRepository:
         return result.scalar_one_or_none()
 
     async def get_course_detail_row(self, session: AsyncSession, course_id: int) -> dict | None:
+        from app.modules.content.models import ContentCategory
         from app.modules.storage.models import MediaAsset
         from app.modules.user.models import UserProfile
 
@@ -65,6 +70,7 @@ class CourseRepository:
             select(
                 Course.id,
                 Course.title,
+                Course.summary,
                 Course.description,
                 Course.instructor_id,
                 Course.category_id,
@@ -75,11 +81,13 @@ class CourseRepository:
                 Course.enrollment_count,
                 Course.rating,
                 Course.created_at,
+                ContentCategory.name.label("category_name"),
                 UserProfile.display_name.label("instructor_name"),
                 MediaAsset.object_key.label("cover_object_key"),
                 MediaAsset.public_url.label("cover_public_url"),
             )
             .join(UserProfile, Course.instructor_id == UserProfile.user_id)
+            .outerjoin(ContentCategory, Course.category_id == ContentCategory.id)
             .outerjoin(MediaAsset, Course.cover_asset_id == MediaAsset.id)
             .where(Course.id == course_id)
             .where(Course.deleted_at.is_(None))
