@@ -32,6 +32,10 @@ export async function createContent(payload: ContentCreatePayload) {
   });
 }
 
+export async function fetchContentDetail(contentId: number, options: RequestOptions = {}) {
+  return apiRequest<ContentVideoResponse>(`/contents/${contentId}`, options);
+}
+
 export async function fetchContentCategories() {
   return apiRequest<ContentCategoryResponse[]>("/discover/categories");
 }

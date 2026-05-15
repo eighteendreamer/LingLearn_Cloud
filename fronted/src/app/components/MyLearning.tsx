@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock, BookmarkCheck, TrendingUp, Target, Play, ChevronRight } from "lucide-react";
+import { useNavigate } from "react-router";
 
 import { fetchCurrentUser, fetchMyFavorites, fetchMyWatchHistory } from "../lib/account";
 import { hasSession } from "../lib/session";
+import type { DiscoverWatchNavigationState } from "../lib/discover-watch";
 import type {
   ContentFavoriteItemResponse,
   ContentVideoResponse,
@@ -42,6 +44,7 @@ function getAuthorName(video: ContentVideoResponse) {
 }
 
 export function MyLearning() {
+  const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [favoriteItems, setFavoriteItems] = useState<ContentFavoriteItemResponse[]>([]);
   const [watchItems, setWatchItems] = useState<ContentWatchHistoryItemResponse[]>([]);
@@ -111,6 +114,19 @@ export function MyLearning() {
     return colors[color] || "from-gray-400 to-gray-500";
   };
 
+  const openLearningWatch = (videos: ContentVideoResponse[], currentIndex: number) => {
+    if (!videos[currentIndex]) {
+      return;
+    }
+
+    const navigationState: DiscoverWatchNavigationState = {
+      source: "learning",
+      videos,
+      currentIndex,
+    };
+    navigate(`/discover/watch/${videos[currentIndex].id}`, { state: navigationState });
+  };
+
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
       <div className="max-w-screen-xl mx-auto px-4 py-6">
@@ -152,12 +168,14 @@ export function MyLearning() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {favoriteItems.map(({ content }) => {
               const progress = watchItems.find((item) => item.content.id === content.id)?.watch_progress ?? 0;
-              const Wrapper = content.video_url ? "a" : "div";
+              const favoriteVideos = favoriteItems.map((item) => item.content);
+              const favoriteIndex = favoriteVideos.findIndex((item) => item.id === content.id);
               return (
-                <Wrapper
+                <button
                   key={content.id}
-                  {...(content.video_url ? { href: content.video_url, target: "_blank", rel: "noreferrer" } : {})}
-                  className="bg-white rounded-2xl overflow-hidden border border-gray-200 hover:border-emerald-500 transition-all cursor-pointer group shadow-md hover:shadow-lg"
+                  type="button"
+                  onClick={() => openLearningWatch(favoriteVideos, favoriteIndex)}
+                  className="w-full bg-white rounded-2xl overflow-hidden border border-gray-200 hover:border-emerald-500 transition-all cursor-pointer group shadow-md hover:shadow-lg text-left"
                 >
                   <div className="relative">
                     <div className="aspect-video bg-gray-200 relative overflow-hidden">
@@ -197,7 +215,7 @@ export function MyLearning() {
                       <p className="text-emerald-600 text-xs mt-2">已完成</p>
                     )}
                   </div>
-                </Wrapper>
+                </button>
               );
             })}
           </div>
@@ -213,12 +231,14 @@ export function MyLearning() {
           </div>
           <div className="space-y-3">
             {watchItems.map(({ content, last_viewed_at }) => {
-              const Wrapper = content.video_url ? "a" : "div";
+              const watchVideos = watchItems.map((item) => item.content);
+              const watchIndex = watchVideos.findIndex((item) => item.id === content.id);
               return (
-                <Wrapper
+                <button
                   key={content.id}
-                  {...(content.video_url ? { href: content.video_url, target: "_blank", rel: "noreferrer" } : {})}
-                  className="flex gap-3 bg-white rounded-xl p-3 border border-gray-200 hover:border-emerald-500 transition-all cursor-pointer group shadow-sm hover:shadow-md"
+                  type="button"
+                  onClick={() => openLearningWatch(watchVideos, watchIndex)}
+                  className="flex w-full gap-3 bg-white rounded-xl p-3 border border-gray-200 hover:border-emerald-500 transition-all cursor-pointer group shadow-sm hover:shadow-md text-left"
                 >
                   <div className="w-32 h-20 bg-gray-200 rounded-lg flex-shrink-0 relative overflow-hidden">
                     {content.cover_url ? (
@@ -237,7 +257,7 @@ export function MyLearning() {
                     <p className="text-gray-600 text-sm mb-2">{getAuthorName(content)}</p>
                     <p className="text-gray-500 text-xs">{formatRelativeTime(last_viewed_at)}</p>
                   </div>
-                </Wrapper>
+                </button>
               );
             })}
           </div>

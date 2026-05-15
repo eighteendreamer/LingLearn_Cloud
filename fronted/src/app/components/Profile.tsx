@@ -21,8 +21,11 @@ import {
   fetchMyLearningPreferences,
   fetchMyWorks,
 } from "../lib/account";
+import { fetchContentDetail } from "../lib/content";
+import type { DiscoverWatchNavigationState } from "../lib/discover-watch";
 import { getStoredCurrentUser, hasSession } from "../lib/session";
 import type {
+  ContentVideoResponse,
   CurrentUserResponse,
   UserLearningPreferenceInsightResponse,
   UserPreferenceContentItemResponse,
@@ -63,9 +66,15 @@ function formatRelativeTime(value: string) {
   return `${Math.floor(diffSeconds / 86400)} 天前`;
 }
 
-function PreferenceWorkCard({ item }: { item: UserPreferenceContentItemResponse }) {
+function PreferenceWorkCard({
+  item,
+  onClick,
+}: {
+  item: UserPreferenceContentItemResponse;
+  onClick: (item: UserPreferenceContentItemResponse) => void;
+}) {
   return (
-    <div className="group cursor-pointer">
+    <button type="button" onClick={() => onClick(item)} className="group cursor-pointer text-left">
       <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-xl bg-slate-100">
         {item.cover_url ? (
           <img 
@@ -102,7 +111,7 @@ function PreferenceWorkCard({ item }: { item: UserPreferenceContentItemResponse 
         <span className="truncate">{item.author_name}</span>
         <span className="shrink-0">{formatRelativeTime(item.latest_acted_at)}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -115,6 +124,7 @@ export function Profile() {
   const [preferenceFilter, setPreferenceFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(!getStoredCurrentUser());
   const [error, setError] = useState("");
+  const [openingContentId, setOpeningContentId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!hasSession()) {
@@ -246,6 +256,40 @@ export function Profile() {
     { label: "关注", value: profile.stats.following_count.toLocaleString() },
     { label: "粉丝", value: profile.stats.followers_count.toLocaleString() },
   ];
+
+  const openProfileWatch = async (
+    contentIds: number[],
+    currentContentId: number,
+    fallbackVideo?: ContentVideoResponse,
+  ) => {
+    try {
+      setOpeningContentId(currentContentId);
+      const detailResults = await Promise.all(
+        contentIds.map(async (contentId) => {
+          if (fallbackVideo && contentId === currentContentId) {
+            return fallbackVideo;
+          }
+          return fetchContentDetail(contentId, { cache: false });
+        }),
+      );
+
+      const currentIndex = detailResults.findIndex((item) => item.id === currentContentId);
+      if (currentIndex < 0) {
+        return;
+      }
+
+      const navigationState: DiscoverWatchNavigationState = {
+        source: "profile",
+        videos: detailResults,
+        currentIndex,
+      };
+      navigate(`/discover/watch/${currentContentId}`, { state: navigationState });
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "打开视频失败");
+    } finally {
+      setOpeningContentId(null);
+    }
+  };
 
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-20">
@@ -418,9 +462,12 @@ export function Profile() {
           works.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
               {works.map((work) => (
-                <div
+                <button
                   key={work.id}
-                  className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg"
+                  type="button"
+                  onClick={() => void openProfileWatch(works.map((item) => item.id), work.id)}
+                  disabled={openingContentId === work.id}
+                  className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg text-left disabled:cursor-wait disabled:opacity-70"
                 >
                   <div className="mb-4 aspect-[4/5] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-blue-100">
                     {work.cover_url ? (
@@ -436,7 +483,10 @@ export function Profile() {
                   <p className="line-clamp-3 text-sm text-gray-600">
                     {work.summary || "这条作品还没有补充简介。"}
                   </p>
-                </div>
+                  {openingContentId === work.id ? (
+                    <p className="mt-3 text-xs font-medium text-emerald-600">正在打开视频...</p>
+                  ) : null}
+                </button>
               ))}
             </div>
           ) : (
@@ -493,7 +543,22 @@ export function Profile() {
                       ).values()
                     ).sort((a, b) => new Date(b.latest_acted_at).getTime() - new Date(a.latest_acted_at).getTime())
                     .map((item) => (
-                      <PreferenceWorkCard key={`all-${item.content_id}`} item={item} />
+                      <PreferenceWorkCard
+                        key={`all-${item.content_id}`}
+                        item={item}
+                        onClick={(selectedItem) =>
+                          void openProfileWatch(
+                            Array.from(
+                              new Map(
+                                preferenceInsight.grouped_works
+                                  .flatMap((group) => group.items)
+                                  .map((preferenceItem) => [preferenceItem.content_id, preferenceItem]),
+                              ).keys(),
+                            ),
+                            selectedItem.content_id,
+                          )
+                        }
+                      />
                     ))}
                   </div>
                 ) : (
@@ -509,7 +574,16 @@ export function Profile() {
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                           {group.items.map((item) => (
-                            <PreferenceWorkCard key={`${group.key}-${item.content_id}`} item={item} />
+                            <PreferenceWorkCard
+                              key={`${group.key}-${item.content_id}`}
+                              item={item}
+                              onClick={(selectedItem) =>
+                                void openProfileWatch(
+                                  group.items.map((groupItem) => groupItem.content_id),
+                                  selectedItem.content_id,
+                                )
+                              }
+                            />
                           ))}
                         </div>
                       </section>

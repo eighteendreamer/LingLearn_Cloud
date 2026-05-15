@@ -3,6 +3,7 @@ import { VideoFeedLayout } from "./components/VideoFeedLayout";
 import { VideoFeed } from "./components/VideoFeed";
 import { MyLearning } from "./components/MyLearning";
 import { Discover } from "./components/Discover";
+import { DiscoverWatch } from "./components/DiscoverWatch";
 import { Profile } from "./components/Profile";
 import { NotFound } from "./components/NotFound";
 import { AIChat } from "./components/AIChat";
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
       { index: true, Component: VideoFeed },
       { path: "my-learning", Component: MyLearning },
       { path: "discover", Component: Discover },
+      { path: "discover/watch/:contentId", Component: DiscoverWatch },
       { path: "profile", Component: Profile },
       { path: "edit-profile", Component: EditProfile },
       { path: "ai-chat", Component: AIChat },

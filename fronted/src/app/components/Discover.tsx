@@ -1,5 +1,6 @@
 import { Code, Laptop, Calculator, Database, Bot, Settings, Flame, Sparkles, Hash, Play, Search, TrendingUp } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   fetchContentCategories,
   fetchDiscoverHotTags,
@@ -13,6 +14,12 @@ import type {
   DiscoverHotTagResponse,
   DiscoverHotTopicResponse,
 } from "../lib/types";
+import {
+  readDiscoverPersistedState,
+  writeDiscoverPersistedState,
+  type DiscoverPersistedState,
+  type DiscoverWatchNavigationState,
+} from "../lib/discover-watch";
 
 const categoryDecor = [
   { icon: <Code className="h-6 w-6" />, color: "from-blue-500 to-cyan-500" },
@@ -64,8 +71,13 @@ function deriveCategoryVideoCount(
 }
 
 export function Discover() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const navigate = useNavigate();
+  const initialPersistedState = useMemo(() => readDiscoverPersistedState(), []);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasRestoredScrollRef = useRef(false);
+
+  const [searchQuery, setSearchQuery] = useState(initialPersistedState.searchQuery);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(initialPersistedState.selectedCategoryId);
   const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
   const [categories, setCategories] = useState<ContentCategoryResponse[]>([]);
@@ -74,6 +86,15 @@ export function Discover() {
   const [recommendedVideos, setRecommendedVideos] = useState<ContentVideoResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+
+  const persistDiscoverState = (overrides?: Partial<DiscoverPersistedState>) => {
+    writeDiscoverPersistedState({
+      searchQuery,
+      selectedCategoryId,
+      scrollTop: containerRef.current?.scrollTop ?? 0,
+      ...overrides,
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -125,6 +146,30 @@ export function Discover() {
     };
   }, [deferredQuery, selectedCategoryId]);
 
+  useEffect(() => {
+    persistDiscoverState();
+  }, [searchQuery, selectedCategoryId]);
+
+  useEffect(() => {
+    if (loading || hasRestoredScrollRef.current) {
+      return;
+    }
+
+    hasRestoredScrollRef.current = true;
+    const targetScrollTop = initialPersistedState.scrollTop;
+    if (!targetScrollTop) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = targetScrollTop;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialPersistedState.scrollTop, loading]);
+
   const filteredVideos = useMemo(() => {
     if (!deferredQuery) {
       return recommendedVideos;
@@ -166,8 +211,31 @@ export function Discover() {
     [hotTopics],
   );
 
+  const discoverVideos = filteredVideos.slice(0, 8);
+
+  const openDiscoverWatch = (video: ContentVideoResponse, index: number) => {
+    const nextPersistedState: DiscoverPersistedState = {
+      searchQuery,
+      selectedCategoryId,
+      scrollTop: containerRef.current?.scrollTop ?? 0,
+    };
+    const navigationState: DiscoverWatchNavigationState = {
+      source: "discover",
+      videos: discoverVideos,
+      currentIndex: index,
+      persistedState: nextPersistedState,
+    };
+
+    writeDiscoverPersistedState(nextPersistedState);
+    navigate(`/discover/watch/${video.id}`, { state: navigationState });
+  };
+
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-24">
+    <div
+      ref={containerRef}
+      onScroll={() => persistDiscoverState()}
+      className="h-full overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-emerald-50 pb-24"
+    >
       <div className="mx-auto max-w-screen-xl px-4 py-6">
         <div className="mb-6">
           <div className="relative">
@@ -328,13 +396,12 @@ export function Discover() {
             </div>
           ) : filteredVideos.length ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {filteredVideos.slice(0, 8).map((video) => (
-                <a
+              {discoverVideos.map((video, index) => (
+                <button
                   key={video.id}
-                  href={video.video_url || undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md transition-all hover:border-emerald-500 hover:shadow-lg"
+                  type="button"
+                  onClick={() => openDiscoverWatch(video, index)}
+                  className="group w-full overflow-hidden rounded-2xl border border-gray-200 bg-white text-left shadow-md transition-all hover:border-emerald-500 hover:shadow-lg"
                 >
                   <div className="relative aspect-video overflow-hidden bg-gray-200">
                     {video.cover_url ? (
@@ -371,7 +438,7 @@ export function Discover() {
                       {formatCompactCount(video.interaction.views_count)} 观看
                     </p>
                   </div>
-                </a>
+                </button>
               ))}
             </div>
           ) : (
