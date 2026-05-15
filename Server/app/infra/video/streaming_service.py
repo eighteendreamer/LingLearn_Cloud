@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -38,7 +39,7 @@ class VideoStreamingService:
             object_key=self.build_manifest_object_key(object_key),
         )
 
-    async def prepare_streaming_assets(self, *, object_key: str) -> None:
+    async def prepare_streaming_assets(self, *, object_key: str) -> int | None:
         base_temp_dir = Path(__file__).resolve().parents[3] / ".tmp" / "video-streaming"
         base_temp_dir.mkdir(parents=True, exist_ok=True)
         workdir = base_temp_dir / f"job-{uuid4().hex}"
@@ -53,6 +54,7 @@ class VideoStreamingService:
                 object_key=object_key,
                 target_path=source_path,
             )
+            duration_seconds = await self._probe_duration_seconds(source_path)
 
             await self._rewrite_faststart(source_path=source_path, target_path=faststart_path)
             await self.storage_service.upload_file(
@@ -63,6 +65,22 @@ class VideoStreamingService:
 
             await self._generate_hls(source_path=faststart_path, output_dir=hls_dir)
             await self._upload_hls_directory(object_key=object_key, source_dir=hls_dir)
+            return duration_seconds
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    async def probe_object_duration_seconds(self, *, object_key: str) -> int | None:
+        base_temp_dir = Path(__file__).resolve().parents[3] / ".tmp" / "video-streaming"
+        base_temp_dir.mkdir(parents=True, exist_ok=True)
+        workdir = base_temp_dir / f"probe-{uuid4().hex}"
+        workdir.mkdir(parents=True, exist_ok=True)
+        try:
+            source_path = workdir / "source.mp4"
+            await self.storage_service.download_object_to_path(
+                object_key=object_key,
+                target_path=source_path,
+            )
+            return await self._probe_duration_seconds(source_path)
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
@@ -137,6 +155,63 @@ class VideoStreamingService:
         )
         if completed.returncode != 0:
             raise InfrastructureError(message=f"Failed to optimize MP4 for streaming: {completed.stderr.strip()}")
+
+    async def _probe_duration_seconds(self, video_path: Path) -> int | None:
+        ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
+        ffprobe = ffmpeg.with_name("ffprobe.exe" if ffmpeg.suffix.lower() == ".exe" else "ffprobe")
+        if not ffprobe.exists():
+            return await self._probe_duration_seconds_with_ffmpeg(ffmpeg, video_path)
+
+        command = [
+            str(ffprobe),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ]
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            return await self._probe_duration_seconds_with_ffmpeg(ffmpeg, video_path)
+
+        try:
+            duration = float((completed.stdout or "").strip())
+        except ValueError:
+            return await self._probe_duration_seconds_with_ffmpeg(ffmpeg, video_path)
+        if duration <= 0:
+            return await self._probe_duration_seconds_with_ffmpeg(ffmpeg, video_path)
+        return max(1, int(round(duration)))
+
+    async def _probe_duration_seconds_with_ffmpeg(self, ffmpeg: Path, video_path: Path) -> int | None:
+        command = [
+            str(ffmpeg),
+            "-i",
+            str(video_path),
+        ]
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            capture_output=True,
+            text=True,
+        )
+        output = (completed.stderr or "") + "\n" + (completed.stdout or "")
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+        if not match:
+            return None
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        seconds = float(match.group(3))
+        total_seconds = (hours * 3600) + (minutes * 60) + seconds
+        if total_seconds <= 0:
+            return None
+        return max(1, int(round(total_seconds)))
 
     async def _generate_hls(self, *, source_path: Path, output_dir: Path) -> None:
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()

@@ -144,8 +144,12 @@ class StorageAppService:
 
             object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
             if asset.asset_type == "video":
-                await self.video_streaming_service.prepare_streaming_assets(object_key=asset.object_key)
+                duration_seconds = await self.video_streaming_service.prepare_streaming_assets(
+                    object_key=asset.object_key,
+                )
                 object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
+                if duration_seconds is not None:
+                    asset.duration_seconds = duration_seconds
             asset.file_size = object_info["size"]
             asset.status = "active"
             asset.public_url = self.infra_service.build_public_url(asset.object_key)
@@ -257,8 +261,12 @@ class StorageAppService:
             )
             object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
             if asset.asset_type == "video":
-                await self.video_streaming_service.prepare_streaming_assets(object_key=asset.object_key)
+                duration_seconds = await self.video_streaming_service.prepare_streaming_assets(
+                    object_key=asset.object_key,
+                )
                 object_info = await self.infra_service.stat_uploaded_object(object_key=asset.object_key)
+                if duration_seconds is not None:
+                    asset.duration_seconds = duration_seconds
             asset.file_size = object_info["size"]
             asset.status = "active"
             asset.public_url = self.infra_service.build_public_url(asset.object_key)

@@ -68,6 +68,13 @@ class ContentService:
         payload: ContentCreateRequest,
     ) -> ContentVideoResponse:
         normalized_tags = self._normalize_hashtags(payload.hashtags)
+        asset_duration_seconds = payload.duration_seconds
+
+        if asset_duration_seconds is None and payload.primary_media_asset_id is not None:
+            assets = await self.repository.get_media_assets_by_ids(session, [payload.primary_media_asset_id])
+            primary_asset = assets.get(payload.primary_media_asset_id)
+            if primary_asset is not None and primary_asset.duration_seconds is not None:
+                asset_duration_seconds = int(primary_asset.duration_seconds)
 
         async with session.begin():
             await self._validate_content_assets(
@@ -96,7 +103,7 @@ class ContentService:
                 publish_status="published",
                 cover_asset_id=payload.cover_asset_id,
                 primary_media_asset_id=payload.primary_media_asset_id,
-                duration_seconds=payload.duration_seconds,
+                duration_seconds=asset_duration_seconds,
                 hashtags_json=normalized_tags or None,
                 allow_comment=payload.allow_comment,
                 allow_duet=payload.allow_duet,

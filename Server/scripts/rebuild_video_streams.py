@@ -7,7 +7,7 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, update
 
 if __package__ in {None, ""}:
     project_root = Path(__file__).resolve().parent.parent
@@ -24,8 +24,10 @@ from app.modules.storage.models import MediaAsset
 class StreamJob:
     asset_id: int
     object_key: str
+    asset_duration_seconds: int | None = None
     content_ids: list[int] = field(default_factory=list)
     content_titles: list[str] = field(default_factory=list)
+    missing_content_duration: bool = False
 
 
 @dataclass
@@ -73,8 +75,10 @@ async def fetch_jobs(
             select(
                 MediaAsset.id.label("asset_id"),
                 MediaAsset.object_key.label("object_key"),
+                MediaAsset.duration_seconds.label("asset_duration_seconds"),
                 ContentItem.id.label("content_id"),
                 ContentItem.title.label("content_title"),
+                ContentItem.duration_seconds.label("content_duration_seconds"),
             )
             .join(ContentItem, ContentItem.primary_media_asset_id == MediaAsset.id)
             .where(
@@ -101,12 +105,15 @@ async def fetch_jobs(
             job = StreamJob(
                 asset_id=asset_id,
                 object_key=str(row["object_key"]),
+                asset_duration_seconds=int(row["asset_duration_seconds"]) if row["asset_duration_seconds"] is not None else None,
             )
             jobs_by_asset[asset_id] = job
 
         content_id = int(row["content_id"])
         if content_id not in job.content_ids:
             job.content_ids.append(content_id)
+        if row["content_duration_seconds"] is None:
+            job.missing_content_duration = True
         content_title = str(row["content_title"] or "").strip()
         if content_title and content_title not in job.content_titles:
             job.content_titles.append(content_title)
@@ -129,34 +136,74 @@ async def process_job(
         manifest_key = streaming_service.build_manifest_object_key(job.object_key)
         title_preview = " / ".join(job.content_titles[:2]) or f"asset:{job.asset_id}"
         prefix = f"[asset {job.asset_id}] {title_preview}"
+        metadata_only = False
 
         if not force:
             exists = await streaming_service.has_hls_manifest(object_key=job.object_key)
             if exists:
-                print(f"{prefix} -> skip (already has {manifest_key})")
-                return StreamJobResult(asset_id=job.asset_id, status="skipped", detail="already_processed")
+                if job.asset_duration_seconds is not None and not job.missing_content_duration:
+                    print(f"{prefix} -> skip (already has {manifest_key})")
+                    return StreamJobResult(asset_id=job.asset_id, status="skipped", detail="already_processed")
+                metadata_only = True
 
         if dry_run:
-            print(f"{prefix} -> dry-run rebuild {manifest_key}")
-            return StreamJobResult(asset_id=job.asset_id, status="dry_run", detail=manifest_key)
+            action = "metadata-sync" if metadata_only else f"rebuild {manifest_key}"
+            print(f"{prefix} -> dry-run {action}")
+            return StreamJobResult(asset_id=job.asset_id, status="dry_run", detail=action)
 
-        print(f"{prefix} -> rebuilding")
+        print(f"{prefix} -> {'syncing metadata' if metadata_only else 'rebuilding'}")
         try:
-            await streaming_service.prepare_streaming_assets(object_key=job.object_key)
+            if metadata_only:
+                duration_seconds = await streaming_service.probe_object_duration_seconds(
+                    object_key=job.object_key,
+                )
+            else:
+                duration_seconds = await streaming_service.prepare_streaming_assets(object_key=job.object_key)
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
             print(f"{prefix} -> failed: {detail}")
             traceback.print_exc()
             return StreamJobResult(asset_id=job.asset_id, status="failed", detail=detail)
 
+        await persist_duration_metadata(
+            asset_id=job.asset_id,
+            content_ids=job.content_ids,
+            duration_seconds=duration_seconds,
+        )
+
         manifest_exists = await streaming_service.has_hls_manifest(object_key=job.object_key)
-        if not manifest_exists:
+        if not metadata_only and not manifest_exists:
             detail = f"manifest missing after rebuild: {manifest_key}"
             print(f"{prefix} -> failed: {detail}")
             return StreamJobResult(asset_id=job.asset_id, status="failed", detail=detail)
 
         print(f"{prefix} -> ok")
         return StreamJobResult(asset_id=job.asset_id, status="processed", detail=manifest_key)
+
+
+async def persist_duration_metadata(
+    *,
+    asset_id: int,
+    content_ids: list[int],
+    duration_seconds: int | None,
+) -> None:
+    if duration_seconds is None:
+        return
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(MediaAsset)
+                .where(MediaAsset.id == asset_id)
+                .values(duration_seconds=duration_seconds)
+            )
+            if content_ids:
+                await session.execute(
+                    update(ContentItem)
+                    .where(ContentItem.id.in_(content_ids))
+                    .values(duration_seconds=duration_seconds)
+                )
 
 
 async def main() -> int:

@@ -202,9 +202,13 @@ export function VideoFeed() {
   const [currentIndex, setCurrentIndex] = useState(() => feedSnapshots.for_you?.currentIndex ?? 0);
   const [isMuted, setIsMuted] = useState(() => {
     if (typeof window === "undefined") {
-      return false;
+      return true;
     }
-    return window.localStorage.getItem(MUTE_STORAGE_KEY) === "1";
+    const stored = window.localStorage.getItem(MUTE_STORAGE_KEY);
+    if (stored === null) {
+      return true;
+    }
+    return stored === "1";
   });
   const [isPlaying, setIsPlaying] = useState(true);
   const [pendingAction, setPendingAction] = useState("");
@@ -425,6 +429,25 @@ export function VideoFeed() {
     }
   };
 
+  const attemptVideoPlayback = async (video: HTMLVideoElement) => {
+    try {
+      await video.play();
+      return;
+    } catch (error) {
+      const shouldRetryMuted =
+        error instanceof DOMException &&
+        error.name === "NotAllowedError" &&
+        !video.muted;
+      if (!shouldRetryMuted) {
+        return;
+      }
+
+      video.muted = true;
+      setIsMuted(true);
+      await video.play().catch(() => {});
+    }
+  };
+
   const attachHlsVideoSource = async (
     index: number,
     video: HTMLVideoElement,
@@ -433,8 +456,12 @@ export function VideoFeed() {
   ) => {
     const manifestUrl = item.hls_manifest_url?.trim();
     const fallbackUrl = item.video_url?.trim() || null;
-    if (!manifestUrl) {
+    if (fallbackUrl) {
       attachDirectVideoSource(index, video, fallbackUrl);
+      return;
+    }
+    if (!manifestUrl) {
+      clearVideoSource(video);
       return;
     }
 
@@ -694,11 +721,18 @@ export function VideoFeed() {
       };
     }
 
-    void attachHlsVideoSource(currentIndex, video, item, () => active);
+    async function attachSource() {
+      await attachHlsVideoSource(currentIndex, video, item, () => active);
+      if (active && currentIndex < filteredVideos.length && isPlaying) {
+        await attemptVideoPlayback(video);
+      }
+    }
+
+    void attachSource();
     return () => {
       active = false;
     };
-  }, [currentIndex, filteredVideos]);
+  }, [currentIndex, filteredVideos, isPlaying]);
 
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
@@ -706,7 +740,7 @@ export function VideoFeed() {
         return;
       }
       if (index === currentIndex && isPlaying) {
-        void video.play().catch(() => {});
+        void attemptVideoPlayback(video);
       } else {
         video.pause();
       }
@@ -1367,9 +1401,15 @@ export function VideoFeed() {
                       onLoadedMetadata={(event) =>
                         handleVideoMetadataLoaded(video.id, event.currentTarget)
                       }
+                      onCanPlay={(event) => {
+                        if (index === currentIndex && isPlaying) {
+                          void attemptVideoPlayback(event.currentTarget);
+                        }
+                      }}
                       className="absolute inset-0 h-full w-full object-contain"
                       loop
                       playsInline
+                      muted={isMuted}
                       poster={video.cover_url ?? undefined}
                       preload={videoPreloadMode}
                     />
