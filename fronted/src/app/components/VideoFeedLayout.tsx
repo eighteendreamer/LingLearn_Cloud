@@ -14,8 +14,9 @@ const navigation = [
 export function VideoFeedLayout() {
   const location = useLocation();
   const isDiscoverWatchPage = location.pathname.startsWith("/discover/watch/");
-  const hideBottomNav = location.pathname === "/ai-chat" || isDiscoverWatchPage;
-  const hideFloatingAIChat = location.pathname === "/ai-chat" || isDiscoverWatchPage;
+  const isCoursePage = /^\/courses\/\d+/.test(location.pathname);
+  const hideBottomNav = location.pathname === "/ai-chat" || isDiscoverWatchPage || isCoursePage;
+  const hideFloatingAIChat = location.pathname === "/ai-chat" || isDiscoverWatchPage || isCoursePage;
 
   return (
     <PageContextProvider>

@@ -588,7 +588,7 @@ class ContentRepository:
     ) -> tuple[list[dict], int]:
         normalized_keyword = keyword.strip() if keyword else ""
         id_stmt = (
-            select(ContentItem.id)
+            select(ContentItem.id, ContentItem.hot_score, ContentItem.published_at)
             .select_from(ContentItem)
             .outerjoin(ContentCategory, ContentCategory.id == ContentItem.category_id)
             .outerjoin(ContentItemTag, ContentItemTag.content_item_id == ContentItem.id)
@@ -613,8 +613,9 @@ class ContentRepository:
         total_stmt = select(func.count(func.distinct(id_subquery.c.id)))
         total = int((await session.scalar(total_stmt)) or 0)
 
-        id_rows = list(
-            (
+        id_rows = [
+            row[0]
+            for row in (
                 await session.execute(
                     id_stmt.distinct()
                     .order_by(
@@ -625,10 +626,8 @@ class ContentRepository:
                     .offset(offset)
                     .limit(limit)
                 )
-            )
-            .scalars()
-            .all()
-        )
+            ).all()
+        ]
         rows = await self.get_content_rows_by_ids(
             session,
             viewer_user_id=viewer_user_id,

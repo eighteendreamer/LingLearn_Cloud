@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "Read(//c/Users/32734/Desktop/**)",
+      "Read(//c/Users/32734/**)",
+      "Bash(E:/Interpreter/Python_Conda/envs/ai-service/python.exe -c ' *)",
+      "Bash(npx tsc *)",
+      "Bash(npx -p typescript tsc --noEmit)",
+      "Bash(npx vite *)",
+      "Bash(E:/Interpreter/Python_Conda/envs/ai-service/python.exe -m alembic revision --autogenerate -m \"full_schema_sync\")",
+      "Bash(E:/Interpreter/Python_Conda/envs/ai-service/python.exe -m pip install alembic)"
+    ]
+  }
+}

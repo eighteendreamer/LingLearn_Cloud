@@ -18,11 +18,21 @@ from app.modules.admin.service import (
     CategoryManagementService,
     CommentManagementService,
     ContentManagementService,
+    CourseManagementService,
     OperationLogService,
     StatisticsService,
     TagManagementService,
     UserManagementService,
 )
+from app.modules.storage.schemas import (
+    StorageCompleteMultipartUploadRequest,
+    StorageCompleteUploadRequest,
+    StorageInitiateMultipartUploadRequest,
+    StoragePresignUploadPartRequest,
+    StoragePresignUploadRequest,
+)
+from app.db.session import get_session_factory
+from app.modules.storage.service import StorageAppService
 
 router = APIRouter(prefix="/admin")
 
@@ -55,14 +65,14 @@ def model_to_dict(obj: Any) -> dict:
     
     # 如果是 SQLAlchemy 模型对象
     if hasattr(obj, '__table__'):
+        from sqlalchemy import inspect as sa_inspect
         result = {}
-        for column in obj.__table__.columns:
-            value = getattr(obj, column.name)
-            # 处理 datetime 对象
+        for attr in sa_inspect(type(obj)).column_attrs:
+            value = getattr(obj, attr.key)
             if hasattr(value, 'isoformat'):
-                result[column.name] = value.isoformat()
+                result[attr.key] = value.isoformat()
             else:
-                result[column.name] = value
+                result[attr.key] = value
         return result
     
     # 如果是普通对象，尝试转换为字典
@@ -546,6 +556,225 @@ async def delete_tag(
         target_type="tag", target_id=tag_id, description="删除标签",
     )
     return success(data={"message": "标签删除成功"})
+
+
+# ============ 课程管理 ============
+@router.get("/management/courses")
+async def get_courses(
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = None,
+    status: str | None = None,
+):
+    skip = (page - 1) * page_size
+    result = await CourseManagementService.get_courses(db, skip, page_size, keyword, status)
+    return success(data={"items": serialize_items(result["items"]), "total": result["total"], "page": page, "page_size": page_size})
+
+
+@router.post("/management/courses")
+async def create_course(
+    course_data: schemas.CourseCreate,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    course = await CourseManagementService.create_course(db, course_data, current_admin.id)
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course", action="create",
+        target_type="course", target_id=course.id, description=f"创建课程: {course.title}",
+    )
+    return success(data=model_to_dict(course))
+
+
+@router.put("/management/courses/{course_id}")
+async def update_course(
+    course_id: int,
+    course_data: schemas.CourseUpdate,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    course = await CourseManagementService.update_course(db, course_id, course_data)
+    if not course:
+        raise HTTPException(status_code=404, detail="课程不存在")
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course", action="update",
+        target_type="course", target_id=course_id, description=f"更新课程: {course.title}",
+    )
+    return success(data=model_to_dict(course))
+
+
+@router.delete("/management/courses/{course_id}")
+async def delete_course(
+    course_id: int,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    deleted = await CourseManagementService.delete_course(db, course_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="课程不存在")
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course", action="delete",
+        target_type="course", target_id=course_id, description="删除课程",
+    )
+    return success(data={"message": "课程删除成功"})
+
+
+@router.get("/management/courses/{course_id}/lessons")
+async def get_course_lessons(
+    course_id: int,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    lessons = await CourseManagementService.get_course_lessons(db, course_id)
+    return success(data={"items": serialize_items(lessons), "total": len(lessons)})
+
+
+@router.post("/management/courses/{course_id}/lessons")
+async def create_course_lesson(
+    course_id: int,
+    lesson_data: schemas.CourseLessonCreate,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    lesson = await CourseManagementService.create_lesson(db, course_id, lesson_data)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="课程不存在")
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course_lesson", action="create",
+        target_type="course_lesson", target_id=lesson.id, description=f"创建课时: {lesson.title}",
+    )
+    return success(data=model_to_dict(lesson))
+
+
+@router.put("/management/courses/{course_id}/lessons/{lesson_id}")
+async def update_course_lesson(
+    course_id: int,
+    lesson_id: int,
+    lesson_data: schemas.CourseLessonUpdate,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    lesson = await CourseManagementService.update_lesson(db, course_id, lesson_id, lesson_data)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="课时不存在")
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course_lesson", action="update",
+        target_type="course_lesson", target_id=lesson_id, description=f"更新课时: {lesson.title}",
+    )
+    return success(data=model_to_dict(lesson))
+
+
+@router.delete("/management/courses/{course_id}/lessons/{lesson_id}")
+async def delete_course_lesson(
+    course_id: int,
+    lesson_id: int,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    deleted = await CourseManagementService.delete_lesson(db, course_id, lesson_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="课时不存在")
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="course_lesson", action="delete",
+        target_type="course_lesson", target_id=lesson_id, description="删除课时",
+    )
+    return success(data={"message": "课时删除成功"})
+
+
+@router.get("/management/content-items")
+async def list_content_items(
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str | None = None,
+):
+    skip = (page - 1) * page_size
+    result = await CourseManagementService.list_content_items_for_link(db, skip, page_size, keyword)
+    return success(data={"items": serialize_items(result["items"]), "total": result["total"], "page": page, "page_size": page_size})
+
+
+# ============ 管理后台存储上传 ============
+@router.post("/management/storage/presign-upload")
+async def admin_presign_upload(
+    payload: StoragePresignUploadRequest,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    service = StorageAppService()
+    async with get_session_factory()() as session:
+        data = await service.presign_upload(session, user_id=None, payload=payload)
+    return success(data=data.model_dump())
+
+
+@router.post("/management/storage/initiate-multipart-upload")
+async def admin_initiate_multipart_upload(
+    payload: StorageInitiateMultipartUploadRequest,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    service = StorageAppService()
+    async with get_session_factory()() as session:
+        data = await service.initiate_multipart_upload(session, user_id=None, payload=payload)
+    return success(data=data.model_dump())
+
+
+@router.post("/management/storage/presign-upload-part")
+async def admin_presign_upload_part(
+    payload: StoragePresignUploadPartRequest,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    service = StorageAppService()
+    async with get_session_factory()() as session:
+        data = await service.presign_upload_part(session, user_id=None, payload=payload)
+    return success(data=data.model_dump())
+
+
+@router.post("/management/storage/complete-upload")
+async def admin_complete_upload(
+    payload: StorageCompleteUploadRequest,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    service = StorageAppService()
+    async with get_session_factory()() as session:
+        data = await service.complete_upload(session, user_id=None, payload=payload)
+    return success(data=data.model_dump())
+
+
+@router.post("/management/storage/complete-multipart-upload")
+async def admin_complete_multipart_upload(
+    payload: StorageCompleteMultipartUploadRequest,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    service = StorageAppService()
+    async with get_session_factory()() as session:
+        data = await service.complete_multipart_upload(session, user_id=None, payload=payload)
+    return success(data=data.model_dump())
+
+
+@router.post("/management/content-items")
+async def admin_create_content_item(
+    payload: schemas.AdminContentItemCreate,
+    db: DBSession,
+    current_admin: Annotated[AdminUser, Depends(get_current_admin_user)],
+):
+    from app.modules.content.models import ContentItem
+    content = ContentItem(
+        author_id=1,
+        title=payload.title,
+        primary_media_asset_id=payload.primary_media_asset_id,
+        content_type=payload.content_type,
+        category_id=payload.category_id,
+        audit_status="approved",
+        publish_status="published",
+    )
+    db.add(content)
+    await db.commit()
+    await db.refresh(content)
+    await OperationLogService.create_log(
+        db, admin_user_id=current_admin.id, module="content", action="create",
+        target_type="content_item", target_id=content.id, description=f"管理后台创建内容: {content.title}",
+    )
+    return success(data={"id": content.id, "title": content.title})
 
 
 # ============ 统计数据 ============

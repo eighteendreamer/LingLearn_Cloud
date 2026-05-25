@@ -33,6 +33,7 @@ class CourseLessonResponse(BaseModel):
     id: int
     title: str
     description: str | None
+    content_item_id: int | None
     duration_minutes: int
     sort_order: int
     is_free: bool

@@ -433,11 +433,11 @@ class AIChatService:
             return "video_content"
         if AIChatService._page_context_prefers_resource_generation(normalized, page_context):
             return "resource_generation"
-        if any(keyword in normalized for keyword in ("????", "????", "??", "??", "??", "??", "??", "quiz", "practice")):
+        if any(keyword in normalized for keyword in ("学习路线", "学习计划", "推荐", "路径", "资源", "规划", "目标", "quiz", "practice")):
             return "resource_generation"
-        if any(keyword in normalized for keyword in ("??", "??", "??", "???", "??")):
+        if any(keyword in normalized for keyword in ("评测", "批改", "成绩", "掌握度", "打分")):
             return "study_plan"
-        if any(keyword in normalized for keyword in ("??", "??", "??", "??", "??")):
+        if any(keyword in normalized for keyword in ("评估", "诊断", "画像", "月报", "学情")):
             return "learning_evaluation"
         return "tutor_qa"
 
@@ -460,8 +460,8 @@ class AIChatService:
         current_video = page_context.get("current_video")
         if not isinstance(current_video, dict) or not current_video.get("title"):
             return False
-        page_keywords = ("????", "????", "????", "????", "???", "???", "????", "????", "?????", "?????")
-        action_keywords = ("??", "??", "quiz", "practice", "????", "????", "??", "??", "????", "??", "??", "??")
+        page_keywords = ("这个视频", "当前内容", "这门课程", "这个课程", "这节课", "这堂课", "当前学习", "当前页面", "这个页面的", "当前页面的")
+        action_keywords = ("出题", "练习", "quiz", "practice", "做个练习", "做个测验", "规划", "路径", "生成路径", "推荐", "建议", "资源")
         return any(keyword in text for keyword in page_keywords) and any(keyword in text for keyword in action_keywords)
 
     @staticmethod

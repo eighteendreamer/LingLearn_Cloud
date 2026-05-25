@@ -19,6 +19,10 @@ from app.modules.admin.schemas import (
     ContentAuditUpdate,
     ContentPublishUpdate,
     ContentStats,
+    CourseCreate,
+    CourseLessonCreate,
+    CourseLessonUpdate,
+    CourseUpdate,
     DashboardStats,
     TagManagementCreate,
     TagManagementUpdate,
@@ -35,6 +39,7 @@ from app.modules.content.models import (
     Tag,
 )
 from app.modules.user.models import UserProfile
+from app.modules.storage.models import MediaAsset
 
 
 class AdminAuthService:
@@ -734,6 +739,289 @@ class StatisticsService:
             )
             for row in data
         ]
+
+
+class CourseManagementService:
+
+    @staticmethod
+    async def get_courses(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 20,
+        keyword: str | None = None,
+        status: str | None = None,
+    ):
+        from app.modules.course.models import Course
+
+        stmt = (
+            select(
+                Course.id,
+                Course.title,
+                Course.summary,
+                Course.level,
+                Course.lesson_count,
+                Course.enrollment_count,
+                Course.cover_asset_id,
+                Course.status,
+                Course.created_at,
+                UserProfile.display_name.label("instructor_name"),
+                ContentCategory.name.label("category_name"),
+                MediaAsset.public_url.label("cover_url"),
+            )
+            .join(UserProfile, Course.instructor_id == UserProfile.user_id)
+            .outerjoin(ContentCategory, Course.category_id == ContentCategory.id)
+            .outerjoin(MediaAsset, Course.cover_asset_id == MediaAsset.id)
+            .where(Course.deleted_at.is_(None))
+            .order_by(desc(Course.created_at))
+        )
+
+        if keyword:
+            stmt = stmt.where(Course.title.contains(keyword))
+        if status:
+            stmt = stmt.where(Course.status == status)
+
+        total_stmt = select(func.count()).select_from(stmt.subquery())
+        total = await db.scalar(total_stmt)
+
+        stmt = stmt.offset(skip).limit(limit)
+        result = await db.execute(stmt)
+        rows = [dict(row._mapping) for row in result]
+
+        return {"total": total, "items": rows}
+
+    @staticmethod
+    async def create_course(
+        db: AsyncSession, course_data: CourseCreate, admin_user_id: int
+    ):
+        from app.modules.course.models import Course
+
+        course = Course(
+            title=course_data.title,
+            summary=course_data.summary,
+            description=course_data.description,
+            instructor_id=admin_user_id,
+            category_id=course_data.category_id,
+            cover_asset_id=course_data.cover_asset_id,
+            level=course_data.level,
+            status=course_data.status,
+        )
+        if course_data.status == "published":
+            course.published_at = datetime.now()
+
+        db.add(course)
+        await db.commit()
+        await db.refresh(course)
+        return course
+
+    @staticmethod
+    async def update_course(
+        db: AsyncSession, course_id: int, course_data: CourseUpdate
+    ):
+        from app.modules.course.models import Course
+
+        stmt = select(Course).where(Course.id == course_id).where(Course.deleted_at.is_(None))
+        result = await db.execute(stmt)
+        course = result.scalar_one_or_none()
+        if not course:
+            return None
+
+        if course_data.title is not None:
+            course.title = course_data.title
+        if course_data.summary is not None:
+            course.summary = course_data.summary
+        if course_data.description is not None:
+            course.description = course_data.description
+        if course_data.category_id is not None:
+            course.category_id = course_data.category_id
+        if course_data.cover_asset_id is not None:
+            course.cover_asset_id = course_data.cover_asset_id
+        if course_data.level is not None:
+            course.level = course_data.level
+        if course_data.status is not None:
+            course.status = course_data.status
+            if course_data.status == "published" and not course.published_at:
+                course.published_at = datetime.now()
+
+        await db.commit()
+        await db.refresh(course)
+        return course
+
+    @staticmethod
+    async def delete_course(db: AsyncSession, course_id: int) -> bool:
+        from app.modules.course.models import Course
+
+        stmt = select(Course).where(Course.id == course_id).where(Course.deleted_at.is_(None))
+        result = await db.execute(stmt)
+        course = result.scalar_one_or_none()
+        if not course:
+            return False
+
+        course.deleted_at = datetime.now()
+        await db.commit()
+        return True
+
+    @staticmethod
+    async def get_course_lessons(
+        db: AsyncSession, course_id: int,
+    ):
+        from app.modules.course.models import CourseLesson
+
+        stmt = (
+            select(
+                CourseLesson.id,
+                CourseLesson.title,
+                CourseLesson.description,
+                CourseLesson.content_item_id,
+                CourseLesson.duration_minutes,
+                CourseLesson.sort_order,
+                CourseLesson.is_free,
+                CourseLesson.status,
+                CourseLesson.created_at,
+                ContentItem.title.label("content_title"),
+            )
+            .outerjoin(ContentItem, CourseLesson.content_item_id == ContentItem.id)
+            .where(CourseLesson.course_id == course_id)
+            .order_by(CourseLesson.sort_order)
+        )
+
+        result = await db.execute(stmt)
+        rows = [dict(row._mapping) for row in result]
+        return rows
+
+    @staticmethod
+    async def create_lesson(
+        db: AsyncSession, course_id: int, lesson_data: CourseLessonCreate,
+    ):
+        from app.modules.course.models import Course, CourseLesson
+
+        stmt = select(Course).where(Course.id == course_id).where(Course.deleted_at.is_(None))
+        result = await db.execute(stmt)
+        course = result.scalar_one_or_none()
+        if not course:
+            return None
+
+        duration = lesson_data.duration_minutes
+        if lesson_data.content_item_id and duration == 0:
+            ci = await db.execute(
+                select(ContentItem.duration_seconds).where(ContentItem.id == lesson_data.content_item_id)
+            )
+            row = ci.scalar_one_or_none()
+            if row:
+                duration = (row + 59) // 60
+
+        lesson = CourseLesson(
+            course_id=course_id,
+            title=lesson_data.title,
+            description=lesson_data.description,
+            content_item_id=lesson_data.content_item_id,
+            duration_minutes=duration,
+            sort_order=lesson_data.sort_order,
+            is_free=lesson_data.is_free,
+        )
+        db.add(lesson)
+        course.lesson_count += 1
+        course.duration_minutes += duration
+        await db.commit()
+        await db.refresh(lesson)
+        return lesson
+
+    @staticmethod
+    async def update_lesson(
+        db: AsyncSession, course_id: int, lesson_id: int, lesson_data: CourseLessonUpdate,
+    ):
+        from app.modules.course.models import Course, CourseLesson
+
+        stmt = (
+            select(CourseLesson)
+            .where(CourseLesson.id == lesson_id)
+            .where(CourseLesson.course_id == course_id)
+        )
+        result = await db.execute(stmt)
+        lesson = result.scalar_one_or_none()
+        if not lesson:
+            return None
+
+        old_duration = lesson.duration_minutes
+
+        if lesson_data.title is not None:
+            lesson.title = lesson_data.title
+        if lesson_data.description is not None:
+            lesson.description = lesson_data.description
+        if lesson_data.content_item_id is not None:
+            lesson.content_item_id = lesson_data.content_item_id
+        if lesson_data.duration_minutes is not None:
+            lesson.duration_minutes = lesson_data.duration_minutes
+        if lesson_data.sort_order is not None:
+            lesson.sort_order = lesson_data.sort_order
+        if lesson_data.is_free is not None:
+            lesson.is_free = lesson_data.is_free
+        if lesson_data.status is not None:
+            lesson.status = lesson_data.status
+
+        duration_diff = lesson.duration_minutes - old_duration
+        if duration_diff != 0:
+            course = await db.execute(
+                select(Course).where(Course.id == course_id)
+            )
+            c = course.scalar_one_or_none()
+            if c:
+                c.duration_minutes = max(0, c.duration_minutes + duration_diff)
+
+        await db.commit()
+        await db.refresh(lesson)
+        return lesson
+
+    @staticmethod
+    async def delete_lesson(db: AsyncSession, course_id: int, lesson_id: int) -> bool:
+        from app.modules.course.models import Course, CourseLesson
+
+        stmt = (
+            select(CourseLesson)
+            .where(CourseLesson.id == lesson_id)
+            .where(CourseLesson.course_id == course_id)
+        )
+        result = await db.execute(stmt)
+        lesson = result.scalar_one_or_none()
+        if not lesson:
+            return False
+
+        course_result = await db.execute(select(Course).where(Course.id == course_id))
+        course = course_result.scalar_one_or_none()
+        if course:
+            course.lesson_count = max(0, course.lesson_count - 1)
+            course.duration_minutes = max(0, course.duration_minutes - lesson.duration_minutes)
+
+        await db.delete(lesson)
+        await db.commit()
+        return True
+
+    @staticmethod
+    async def list_content_items_for_link(
+        db: AsyncSession, skip: int = 0, limit: int = 50, keyword: str | None = None,
+    ):
+        stmt = (
+            select(
+                ContentItem.id,
+                ContentItem.title,
+                ContentItem.content_type,
+                ContentItem.duration_seconds,
+            )
+            .where(ContentItem.deleted_at.is_(None))
+            .where(ContentItem.publish_status == "published")
+            .order_by(desc(ContentItem.created_at))
+        )
+
+        if keyword:
+            stmt = stmt.where(ContentItem.title.contains(keyword))
+
+        total_stmt = select(func.count()).select_from(stmt.subquery())
+        total = await db.scalar(total_stmt)
+
+        stmt = stmt.offset(skip).limit(limit)
+        result = await db.execute(stmt)
+        rows = [dict(row._mapping) for row in result]
+
+        return {"total": total, "items": rows}
 
 
 class OperationLogService:

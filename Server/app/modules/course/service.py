@@ -105,7 +105,7 @@ class CourseService:
         if viewer_user_id:
             enrollment = await self.repository.get_enrollment(session, viewer_user_id, course_id)
             if enrollment:
-                progress_list = await self.repository.list_lesson_progress_by_enrollment(session, enrollment.id)
+                progress_list = await self.repository.list_lesson_progress_by_course(session, viewer_user_id, course_id)
                 lesson_progress_map = {p.lesson_id: p for p in progress_list}
 
         cover_url = await self.storage_service.build_access_url(
@@ -121,10 +121,11 @@ class CourseService:
                     id=lesson.id,
                     title=lesson.title,
                     description=lesson.description,
+                    content_item_id=lesson.content_item_id,
                     duration_minutes=lesson.duration_minutes,
                     sort_order=lesson.sort_order,
-                    is_free=lesson.is_free,
-                    is_completed=progress.completed if progress else False,
+                    is_free=lesson.is_free == "free",
+                    is_completed=progress.completed_at is not None if progress else False,
                     progress_percent=progress.progress_percent if progress else 0.0,
                 )
             )

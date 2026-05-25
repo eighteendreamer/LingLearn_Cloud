@@ -389,6 +389,61 @@ export interface CourseEnrollmentResponse {
   enrolled_at: string;
 }
 
+export interface CourseInstructorResponse {
+  user_id: number;
+  display_name: string;
+  avatar_url: string | null;
+}
+
+export interface CourseCategoryResponse {
+  id: number;
+  name: string;
+}
+
+export interface CourseLessonResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  content_item_id: number | null;
+  duration_minutes: number;
+  sort_order: number;
+  is_free: boolean;
+  is_completed: boolean;
+  progress_percent: number;
+}
+
+export interface CourseDetailResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  instructor: CourseInstructorResponse;
+  category: CourseCategoryResponse | null;
+  cover_url: string | null;
+  level: string;
+  duration_minutes: number;
+  lesson_count: number;
+  enrollment_count: number;
+  rating: number;
+  is_enrolled: boolean;
+  lessons: CourseLessonResponse[];
+  created_at: string;
+}
+
+export interface CourseListItemResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  instructor: CourseInstructorResponse;
+  category: CourseCategoryResponse | null;
+  cover_url: string | null;
+  level: string;
+  duration_minutes: number;
+  lesson_count: number;
+  enrollment_count: number;
+  rating: number;
+  is_enrolled: boolean;
+}
+
 // Practice
 export interface QuestionBankResponse {
   id: number;

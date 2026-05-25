@@ -93,7 +93,7 @@ class StorageAppService:
         self,
         session: AsyncSession,
         *,
-        user_id: int,
+        user_id: int | None,
         payload: StoragePresignUploadRequest,
     ) -> StoragePresignUploadResponse:
         rule = self._get_rule(payload.biz_type)
@@ -132,7 +132,7 @@ class StorageAppService:
         self,
         session: AsyncSession,
         *,
-        user_id: int,
+        user_id: int | None,
         payload: StorageCompleteUploadRequest,
     ) -> StorageCompleteUploadResponse:
         async with session.begin():
@@ -168,7 +168,7 @@ class StorageAppService:
         self,
         session: AsyncSession,
         *,
-        user_id: int,
+        user_id: int | None,
         payload: StorageInitiateMultipartUploadRequest,
     ) -> StorageInitiateMultipartUploadResponse:
         rule = self._get_rule(payload.biz_type)
@@ -213,7 +213,7 @@ class StorageAppService:
         self,
         session: AsyncSession,
         *,
-        user_id: int,
+        user_id: int | None,
         payload: StoragePresignUploadPartRequest,
     ) -> StoragePresignUploadPartResponse:
         asset = await self.repository.get_media_asset_by_id(session, asset_id=payload.asset_id)
@@ -240,7 +240,7 @@ class StorageAppService:
         self,
         session: AsyncSession,
         *,
-        user_id: int,
+        user_id: int | None,
         payload: StorageCompleteMultipartUploadRequest,
     ) -> StorageCompleteUploadResponse:
         normalized_parts = self._normalize_multipart_parts(payload.parts)

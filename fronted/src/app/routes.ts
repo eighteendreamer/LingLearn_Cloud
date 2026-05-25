@@ -17,6 +17,8 @@ import { Auth } from "./components/Auth";
 import { Create } from "./components/Create";
 import { ResourceCenter } from "./components/ResourceCenter";
 import { EditProfile } from "./components/EditProfile";
+import { CourseDetail } from "./components/CourseDetail";
+import { CourseLearn } from "./components/CourseLearn";
 import AdminLayout from "./components/admin/AdminLayout";
 import AdminLogin from "./components/admin/AdminLogin";
 import Dashboard from "./components/admin/Dashboard";
@@ -27,6 +29,7 @@ import CategoryManagement from "./components/admin/CategoryManagement";
 import TagManagement from "./components/admin/TagManagement";
 import Statistics from "./components/admin/Statistics";
 import AdminSettings from "./components/admin/AdminSettings";
+import CourseManagement from "./components/admin/CourseManagement";
 
 export const router = createBrowserRouter([
   {
@@ -48,6 +51,8 @@ export const router = createBrowserRouter([
       { path: "settings", Component: Settings },
       { path: "create", Component: Create },
       { path: "resources", Component: ResourceCenter },
+      { path: "courses/:id", Component: CourseDetail },
+      { path: "courses/:id/learn", Component: CourseLearn },
     ],
   },
   {
@@ -65,6 +70,7 @@ export const router = createBrowserRouter([
       { path: "dashboard", Component: Dashboard },
       { path: "users", Component: UserManagement },
       { path: "contents", Component: ContentManagement },
+      { path: "courses", Component: CourseManagement },
       { path: "comments", Component: CommentManagement },
       { path: "categories", Component: CategoryManagement },
       { path: "tags", Component: TagManagement },

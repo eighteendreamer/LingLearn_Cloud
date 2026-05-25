@@ -275,3 +275,50 @@ class CategoryStats(BaseModel):
     content_count: int
     total_views: int
     total_likes: int
+
+
+# ============ 课程管理相关 ============
+class CourseCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    summary: str | None = None
+    description: str | None = None
+    category_id: int | None = None
+    cover_asset_id: int | None = None
+    level: str = "beginner"
+    status: str = "draft"
+
+
+class CourseUpdate(BaseModel):
+    title: str | None = None
+    summary: str | None = None
+    description: str | None = None
+    category_id: int | None = None
+    cover_asset_id: int | None = None
+    level: str | None = None
+    status: str | None = None
+
+
+class CourseLessonCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    description: str | None = None
+    content_item_id: int | None = None
+    duration_minutes: int = 0
+    sort_order: int = 0
+    is_free: str = "free"
+
+
+class CourseLessonUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    content_item_id: int | None = None
+    duration_minutes: int | None = None
+    sort_order: int | None = None
+    is_free: str | None = None
+    status: str | None = None
+
+
+class AdminContentItemCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    primary_media_asset_id: int
+    content_type: str = "short_video"
+    category_id: int | None = None

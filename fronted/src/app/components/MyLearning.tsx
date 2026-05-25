@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock, BookmarkCheck, TrendingUp, Target, Play, ChevronRight } from "lucide-react";
+import { Clock, BookmarkCheck, TrendingUp, Target, Play, ChevronRight, BookOpen, Star, Users } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { fetchCurrentUser, fetchMyFavorites, fetchMyWatchHistory } from "../lib/account";
+import { fetchCourses } from "../lib/learning-api";
 import { hasSession } from "../lib/session";
 import type { DiscoverWatchNavigationState } from "../lib/discover-watch";
 import type {
   ContentFavoriteItemResponse,
   ContentVideoResponse,
   ContentWatchHistoryItemResponse,
+  CourseListItemResponse,
   CurrentUserResponse,
 } from "../lib/types";
 
@@ -48,6 +50,7 @@ export function MyLearning() {
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(null);
   const [favoriteItems, setFavoriteItems] = useState<ContentFavoriteItemResponse[]>([]);
   const [watchItems, setWatchItems] = useState<ContentWatchHistoryItemResponse[]>([]);
+  const [courses, setCourses] = useState<CourseListItemResponse[]>([]);
   const [favoritesTotal, setFavoritesTotal] = useState(0);
   const [watchTotal, setWatchTotal] = useState(0);
 
@@ -59,10 +62,11 @@ export function MyLearning() {
     let active = true;
     async function loadLearningData() {
       try {
-        const [me, favoritesPage, watchHistoryPage] = await Promise.all([
+        const [me, favoritesPage, watchHistoryPage, coursesPage] = await Promise.all([
           fetchCurrentUser(),
           fetchMyFavorites(1, 6),
           fetchMyWatchHistory(1, 6),
+          fetchCourses(1, 6),
         ]);
         if (!active) {
           return;
@@ -72,6 +76,7 @@ export function MyLearning() {
         setWatchItems(watchHistoryPage.list);
         setFavoritesTotal(favoritesPage.total);
         setWatchTotal(watchHistoryPage.total);
+        setCourses(coursesPage.list);
       } catch {
         if (!active) {
           return;
@@ -156,6 +161,55 @@ export function MyLearning() {
             );
           })}
         </div>
+
+        {courses.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">课程中心</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {courses.map((course) => (
+                <button
+                  key={course.id}
+                  type="button"
+                  onClick={() => navigate(`/courses/${course.id}`)}
+                  className="w-full bg-white rounded-2xl overflow-hidden border border-gray-200 hover:border-emerald-500 transition-all cursor-pointer group shadow-md hover:shadow-lg text-left"
+                >
+                  <div className="relative aspect-video bg-gray-200 overflow-hidden">
+                    {course.cover_url ? (
+                      <img
+                        src={course.cover_url}
+                        alt={course.title}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-emerald-400 to-teal-600">
+                        <BookOpen className="w-10 h-10 text-white/60" />
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 rounded-full bg-emerald-500/90 px-2.5 py-0.5 text-xs font-medium text-white backdrop-blur">
+                      {course.lesson_count} 课时
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <h3 className="text-gray-900 font-semibold mb-1 line-clamp-1">{course.title}</h3>
+                    <p className="text-gray-500 text-sm mb-2 line-clamp-1">{course.instructor.display_name}</p>
+                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                      <span className="flex items-center gap-0.5">
+                        <Star className="w-3 h-3 text-amber-400" />
+                        {course.rating.toFixed(1)}
+                      </span>
+                      <span className="flex items-center gap-0.5">
+                        <Users className="w-3 h-3" />
+                        {course.enrollment_count}人
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">

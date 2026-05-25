@@ -48,7 +48,7 @@ def _message_text(messages: list[Any], limit: int = 8) -> str:
 async def _ask(llm: Any, system: str, prompt: str) -> str:
     response = await asyncio.wait_for(
         llm.ainvoke([SystemMessage(content=system), HumanMessage(content=prompt)]),
-        timeout=12,
+        timeout=30,
     )
     return str(getattr(response, "content", response)).strip()
 
@@ -73,7 +73,7 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
 
 def _is_agent_catalog_question(text: str) -> bool:
     normalized = (text or "").strip().lower()
-    keywords = ["?????", "??????", "??????", "??????", "???", "agent", "skills"]
+    keywords = ["你能做什么", "你可以做什么", "有哪些智能体", "有什么智能体", "智能体", "agent", "skills"]
     return any(keyword in normalized for keyword in keywords)
 
 
@@ -107,23 +107,23 @@ def _fallback_skill_codes(text: str) -> list[str]:
     if any(
         keyword in normalized
         for keyword in (
-            "????",
-            "????",
-            "??",
-            "??",
+            "学习路线",
+            "学习计划",
+            "推荐",
+            "路径",
             "roadmap",
-            "??",
-            "??",
-            "??",
-            "??",
+            "资源",
+            "规划",
+            "课程",
+            "目标",
             "quiz",
             "practice",
         )
     ):
         return [RESOURCE_GENERATION_SKILL.code]
-    if any(keyword in normalized for keyword in ("??", "??", "??", "???", "??")):
+    if any(keyword in normalized for keyword in ("评测", "批改", "成绩", "掌握度", "打分")):
         return [STUDY_PLAN_SKILL.code]
-    if any(keyword in normalized for keyword in ("??", "??", "??", "??", "??")):
+    if any(keyword in normalized for keyword in ("评估", "诊断", "画像", "月报", "学情")):
         return [LEARNING_EVALUATION_SKILL.code]
     return [TUTOR_QA_SKILL.code]
 
@@ -141,30 +141,30 @@ def _page_context_prefers_resource_generation(
 
     normalized = (text or "").lower()
     page_keywords = (
-        "????",
-        "????",
-        "????",
-        "????",
-        "???",
-        "???",
-        "????",
-        "????",
-        "?????",
-        "?????",
+        "这个视频",
+        "当前内容",
+        "这门课程",
+        "这个课程",
+        "这节课",
+        "这堂课",
+        "当前学习",
+        "当前页面",
+        "这个页面的",
+        "当前页面的",
     )
     action_keywords = (
-        "??",
-        "??",
+        "出题",
+        "练习",
         "quiz",
         "practice",
-        "????",
-        "????",
-        "??",
-        "??",
-        "????",
-        "??",
-        "??",
-        "??",
+        "做个练习",
+        "做个测验",
+        "规划",
+        "路径",
+        "生成路径",
+        "推荐",
+        "建议",
+        "资源",
     )
     return any(keyword in normalized for keyword in page_keywords) and any(keyword in normalized for keyword in action_keywords)
 
@@ -828,9 +828,13 @@ AI 助手当前只集成以下业务智能体：
             state["status"] = "delegates_skipped"
             return state
 
-        for skill_code in state.get("selected_skills", []):
+        tasks = {
+            skill_code: asyncio.create_task(delegate_runner(skill_code, state))
+            for skill_code in state.get("selected_skills", [])
+        }
+        for skill_code, task in tasks.items():
             try:
-                result = await delegate_runner(skill_code, state)
+                result = await task
             except Exception as exc:
                 delegated_results[skill_code] = {"error": str(exc)}
                 continue

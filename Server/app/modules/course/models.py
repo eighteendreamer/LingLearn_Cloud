@@ -36,7 +36,7 @@ class Course(Base, TimestampMixin, SoftDeleteMixin):
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
-class CourseLesson(Base, TimestampMixin, SoftDeleteMixin):
+class CourseLesson(Base, TimestampMixin):
     __tablename__ = "course_lessons"
     __table_args__ = (
         Index("idx_lessons_course_order", "course_id", "sort_order"),
@@ -45,12 +45,12 @@ class CourseLesson(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column("summary", String(500), nullable=True)
     content_item_id: Mapped[int | None] = mapped_column(ForeignKey("content_items.id"), nullable=True)
-    duration_minutes: Mapped[int] = mapped_column(nullable=False, default=0)
+    duration_minutes: Mapped[int] = mapped_column("estimated_minutes", nullable=False, default=0)
     sort_order: Mapped[int] = mapped_column(nullable=False, default=0)
-    is_free: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_free: Mapped[str] = mapped_column("unlock_type", String(20), nullable=False, default="free")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="published")
 
 
@@ -75,14 +75,13 @@ class UserLessonProgress(Base, TimestampMixin):
     __tablename__ = "user_lesson_progress"
     __table_args__ = (
         Index("idx_lesson_progress_user_lesson", "user_id", "lesson_id"),
-        Index("idx_lesson_progress_enrollment", "enrollment_id"),
+        Index("idx_lesson_progress_course", "course_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    enrollment_id: Mapped[int] = mapped_column(ForeignKey("user_course_enrollments.id"), nullable=False)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("course_lessons.id"), nullable=False)
     progress_percent: Mapped[float] = mapped_column(nullable=False, default=0.0)
     watch_seconds: Mapped[int] = mapped_column(nullable=False, default=0)
-    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)

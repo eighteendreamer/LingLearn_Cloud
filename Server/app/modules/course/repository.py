@@ -106,7 +106,6 @@ class CourseRepository:
         result = await session.execute(
             select(CourseLesson)
             .where(CourseLesson.course_id == course_id)
-            .where(CourseLesson.deleted_at.is_(None))
             .where(CourseLesson.status == "published")
             .order_by(CourseLesson.sort_order)
         )
@@ -210,13 +209,15 @@ class CourseRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_lesson_progress_by_enrollment(
+    async def list_lesson_progress_by_course(
         self,
         session: AsyncSession,
-        enrollment_id: int,
+        user_id: int,
+        course_id: int,
     ) -> list[UserLessonProgress]:
         result = await session.execute(
             select(UserLessonProgress)
-            .where(UserLessonProgress.enrollment_id == enrollment_id)
+            .where(UserLessonProgress.user_id == user_id)
+            .where(UserLessonProgress.course_id == course_id)
         )
         return list(result.scalars().all())

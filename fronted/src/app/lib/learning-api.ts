@@ -1,5 +1,7 @@
 import { apiRequest } from "./api";
 import type {
+  CourseDetailResponse,
+  CourseListItemResponse,
   LearningPathActivatePayload,
   LearningPathGeneratePayload,
   LearningPathNodePracticeGenerateResponse,
@@ -16,6 +18,23 @@ import type {
   VideoPracticeGeneratePayload,
   VideoPracticeGenerateResponse,
 } from "./types";
+
+export async function fetchCourses(page = 1, pageSize = 10) {
+  return apiRequest<{ list: CourseListItemResponse[]; total: number }>(
+    `/courses?page=${page}&page_size=${pageSize}`,
+  );
+}
+
+export async function fetchCourseDetail(courseId: number) {
+  return apiRequest<CourseDetailResponse>(`/courses/${courseId}`);
+}
+
+export async function enrollCourse(courseId: number) {
+  return apiRequest<{ enrollment_id: number; course_id: number; enrolled_at: string }>(
+    `/courses/${courseId}/enroll`,
+    { method: "POST" },
+  );
+}
 
 export async function fetchQuestionBanks() {
   const page = await apiRequest<{ list: QuestionBankResponse[] }>("/practice/banks?page=1&page_size=20");
