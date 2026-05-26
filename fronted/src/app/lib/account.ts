@@ -12,6 +12,8 @@ import type {
   ContentWatchHistoryItemResponse,
   CurrentUserResponse,
   PageResponse,
+  PasswordResetConfirmResponse,
+  PasswordResetRequestResponse,
   UserLearningPreferenceInsightResponse,
   UserProfileUpdatePayload,
   UserSettingsUpdatePayload,
@@ -29,6 +31,16 @@ interface RegisterPayload {
   email: string;
   password: string;
   display_name: string;
+}
+
+interface PasswordResetRequestPayload {
+  account: string;
+}
+
+interface PasswordResetConfirmPayload {
+  account: string;
+  code: string;
+  new_password: string;
 }
 
 export async function loginWithPassword(payload: LoginPayload) {
@@ -49,6 +61,22 @@ export async function registerWithPassword(payload: RegisterPayload) {
   });
   saveAuthSession(tokens);
   return fetchCurrentUser();
+}
+
+export async function requestPasswordReset(payload: PasswordResetRequestPayload) {
+  return apiRequest<PasswordResetRequestResponse>("/auth/password-reset/request", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function confirmPasswordReset(payload: PasswordResetConfirmPayload) {
+  return apiRequest<PasswordResetConfirmResponse>("/auth/password-reset/confirm", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchCurrentUser() {

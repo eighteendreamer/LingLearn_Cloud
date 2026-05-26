@@ -22,6 +22,27 @@ class AuthLogoutRequest(BaseModel):
     refresh_token: str
 
 
+class PasswordResetRequest(BaseModel):
+    account: str = Field(min_length=3, max_length=128)
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    account: str = Field(min_length=3, max_length=128)
+    code: str = Field(min_length=4, max_length=12)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class PasswordResetRequestResponse(BaseModel):
+    message: str
+    expires_in_seconds: int
+    masked_email: str | None = None
+    sent: bool = False
+
+
+class PasswordResetConfirmResponse(BaseModel):
+    message: str
+
+
 class AuthTokenResponse(BaseModel):
     user_id: int
     access_token: str

@@ -2465,6 +2465,32 @@ INSERT INTO `user_refresh_tokens` VALUES (25, 7, NULL, '33dcd42155701376cbe79bf7
 INSERT INTO `user_refresh_tokens` VALUES (26, 1, NULL, '71d0d1d252decbe4ecbc27d6eded65b189856ec0c1056ea97738b607de07892e', '2026-06-01 12:12:30', NULL, '2026-05-02 12:12:30', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', '2026-05-02 12:12:30');
 
 -- ----------------------------
+-- Table structure for password_reset_codes
+-- ----------------------------
+DROP TABLE IF EXISTS `password_reset_codes`;
+CREATE TABLE `password_reset_codes`  (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint UNSIGNED NOT NULL COMMENT '用户ID',
+  `email` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '绑定邮箱',
+  `code_hash` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '验证码哈希',
+  `request_ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '请求IP',
+  `failed_attempts` int NOT NULL DEFAULT 0 COMMENT '失败尝试次数',
+  `expired_at` datetime NOT NULL COMMENT '过期时间',
+  `used_at` datetime NULL DEFAULT NULL COMMENT '使用时间',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_password_reset_user_status`(`user_id` ASC, `used_at` ASC, `expired_at` ASC) USING BTREE,
+  INDEX `idx_password_reset_email_created_at`(`email` ASC, `created_at` ASC) USING BTREE,
+  INDEX `idx_password_reset_ip_created_at`(`request_ip` ASC, `created_at` ASC) USING BTREE,
+  CONSTRAINT `fk_password_reset_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '密码找回验证码表' ROW_FORMAT = DYNAMIC;
+
+-- ----------------------------
+-- Records of password_reset_codes
+-- ----------------------------
+
+-- ----------------------------
 -- Table structure for user_settings
 -- ----------------------------
 DROP TABLE IF EXISTS `user_settings`;

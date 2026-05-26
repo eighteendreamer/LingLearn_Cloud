@@ -3,7 +3,7 @@ from app.modules.admin.models import AdminUser, AdminRole, AdminOperationLog
 from app.modules.ai_chat.models import AIChatSession, AIChatMessage
 from app.modules.ai_chat.workflow_models import AIWorkflowRun
 from app.modules.assessment.models import AssessmentSnapshot
-from app.modules.auth.models import UserRefreshToken, User
+from app.modules.auth.models import PasswordResetCode, UserRefreshToken, User
 from app.modules.content.models import ContentCategory, Tag, ContentItem, ContentItemTag, ContentLike, \
     ContentFavorite, ContentComment, ContentShare, ContentViewHistory, ContentQuiz, ContentQuizOption, \
     ContentQuizAttempt
@@ -32,6 +32,7 @@ __all__ = [
     "Base",
     "User",
     "UserRefreshToken",
+    "PasswordResetCode",
     "AdminUser",
     "AdminRole",
     "AdminOperationLog",

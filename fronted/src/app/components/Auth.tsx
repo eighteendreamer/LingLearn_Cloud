@@ -1,37 +1,40 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Eye, EyeOff, GraduationCap, Lock, Mail, User } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, GraduationCap, KeyRound, Lock, Mail, User } from "lucide-react";
 
 import { ApiError } from "../lib/api";
-import { loginWithPassword, registerWithPassword } from "../lib/account";
-import { hasSession } from "../lib/session";
-
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+  confirmPasswordReset,
+  loginWithPassword,
+  registerWithPassword,
+  requestPasswordReset,
+} from "../lib/account";
+import { hasSession } from "../lib/session";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
 
+type AuthMode = "auth" | "reset-request" | "reset-confirm";
+
 export function Auth() {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<AuthMode>("auth");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
     account: "",
     username: "",
     email: "",
+    resetCode: "",
     password: "",
     confirmPassword: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [maskedResetEmail, setMaskedResetEmail] = useState("");
+  const [resetExpiresInSeconds, setResetExpiresInSeconds] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -43,6 +46,34 @@ export function Auth() {
 
   const validateForm = () => {
     const nextErrors: Record<string, string> = {};
+
+    if (mode === "reset-request") {
+      if (!formData.account.trim()) {
+        nextErrors.account = "请输入登录账号";
+      }
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
+    }
+
+    if (mode === "reset-confirm") {
+      if (!formData.resetCode.trim()) {
+        nextErrors.resetCode = "请输入邮箱验证码";
+      } else if (!/^\d{4,12}$/.test(formData.resetCode.trim())) {
+        nextErrors.resetCode = "验证码格式不正确";
+      }
+      if (!formData.password) {
+        nextErrors.password = "请输入新密码";
+      } else if (formData.password.length < 6) {
+        nextErrors.password = "密码至少 6 个字符";
+      }
+      if (!formData.confirmPassword) {
+        nextErrors.confirmPassword = "请再次输入新密码";
+      } else if (formData.password !== formData.confirmPassword) {
+        nextErrors.confirmPassword = "两次输入的密码不一致";
+      }
+      setErrors(nextErrors);
+      return Object.keys(nextErrors).length === 0;
+    }
 
     if (activeTab === "login") {
       if (!formData.account.trim()) {
@@ -83,6 +114,7 @@ export function Auth() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitError("");
+    setSuccessMessage("");
 
     if (!validateForm()) {
       return;
@@ -90,6 +122,37 @@ export function Auth() {
 
     setIsLoading(true);
     try {
+      if (mode === "reset-request") {
+        const response = await requestPasswordReset({
+          account: formData.account.trim(),
+        });
+        setResetExpiresInSeconds(response.expires_in_seconds);
+        setMaskedResetEmail(response.masked_email || "");
+        setSuccessMessage(response.message);
+        if (response.sent) {
+          setMode("reset-confirm");
+        }
+        return;
+      }
+
+      if (mode === "reset-confirm") {
+        const response = await confirmPasswordReset({
+          account: formData.account.trim(),
+          code: formData.resetCode.trim(),
+          new_password: formData.password,
+        });
+        setSuccessMessage(response.message);
+        setMode("auth");
+        setActiveTab("login");
+        setFormData((previous) => ({
+          ...previous,
+          resetCode: "",
+          password: "",
+          confirmPassword: "",
+        }));
+        return;
+      }
+
       if (activeTab === "login") {
         await loginWithPassword({
           account: formData.account.trim(),
@@ -120,6 +183,7 @@ export function Auth() {
     const { name, value } = event.target;
     setFormData((previous) => ({ ...previous, [name]: value }));
     setSubmitError("");
+    setSuccessMessage("");
 
     if (errors[name]) {
       setErrors((previous) => ({ ...previous, [name]: "" }));
@@ -128,16 +192,60 @@ export function Auth() {
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as "login" | "register");
+    setMode("auth");
     setErrors({});
     setSubmitError("");
+    setSuccessMessage("");
+    setMaskedResetEmail("");
     setFormData({
       account: "",
       username: "",
       email: "",
+      resetCode: "",
       password: "",
       confirmPassword: "",
     });
   };
+
+  const openPasswordReset = () => {
+    setMode("reset-request");
+    setActiveTab("login");
+    setErrors({});
+    setSubmitError("");
+    setSuccessMessage("");
+    setMaskedResetEmail("");
+    setFormData((previous) => ({
+      ...previous,
+      resetCode: "",
+      password: "",
+      confirmPassword: "",
+    }));
+  };
+
+  const backToLogin = () => {
+    setMode("auth");
+    setActiveTab("login");
+    setErrors({});
+    setSubmitError("");
+    setSuccessMessage("");
+    setMaskedResetEmail("");
+    setResetExpiresInSeconds(0);
+    setFormData((previous) => ({
+      ...previous,
+      resetCode: "",
+      password: "",
+      confirmPassword: "",
+    }));
+  };
+
+  const submitLabel =
+    mode === "reset-request"
+      ? "发送验证码"
+      : mode === "reset-confirm"
+        ? "重置密码"
+        : activeTab === "login"
+          ? "登录"
+          : "注册";
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -189,100 +297,182 @@ export function Auth() {
             <p className="text-sm text-gray-500 font-medium">登录或注册以继续访问您的账号</p>
           </div>
 
-          <Tabs
-            defaultValue="login"
-            value={activeTab}
-            onValueChange={handleTabChange}
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-2 mb-8 bg-gray-100 rounded-xl p-1 h-auto">
-              <TabsTrigger 
-                value="login" 
-                className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
-              >
-                登录
-              </TabsTrigger>
-              <TabsTrigger 
-                value="register" 
-                className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
-              >
-                注册
-              </TabsTrigger>
-            </TabsList>
+          {mode !== "auth" && (
+            <button
+              type="button"
+              onClick={backToLogin}
+              className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-600"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              返回登录
+            </button>
+          )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <TabsContent value="login" className="m-0 space-y-5 outline-none">
-                <div className="space-y-2">
-                  <Label htmlFor="account" className="text-gray-700 font-medium">账号</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      id="account"
-                      type="text"
-                      name="account"
-                      value={formData.account}
-                      onChange={handleInputChange}
-                      placeholder="用户名或邮箱"
-                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.account ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
-                    />
+          {mode !== "auth" && (
+            <div className="mb-8 space-y-2">
+              <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {mode === "reset-request" ? "找回账号密码" : "设置新密码"}
+              </h2>
+              <p className="text-sm leading-6 text-gray-500">
+                {mode === "reset-request"
+                  ? "输入你的登录账号，我们会向该账号绑定邮箱发送验证码。"
+                  : `验证码已发送至绑定邮箱${maskedResetEmail ? ` ${maskedResetEmail}` : ""}，请在 ${Math.ceil(resetExpiresInSeconds / 60) || 10} 分钟内完成重置。`}
+              </p>
+            </div>
+          )}
+
+          {mode === "auth" && (
+            <Tabs
+              defaultValue="login"
+              value={activeTab}
+              onValueChange={handleTabChange}
+              className="w-full"
+            >
+              <TabsList className="grid w-full grid-cols-2 mb-8 bg-gray-100 rounded-xl p-1 h-auto">
+                <TabsTrigger
+                  value="login"
+                  className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
+                >
+                  登录
+                </TabsTrigger>
+                <TabsTrigger
+                  value="register"
+                  className="py-2.5 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-teal-500 data-[state=active]:text-white data-[state=active]:shadow-md text-gray-600 hover:text-gray-900"
+                >
+                  注册
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {mode === "auth" && (
+              <>
+                {activeTab === "login" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="account" className="text-gray-700 font-medium">账号</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <Input
+                        id="account"
+                        type="text"
+                        name="account"
+                        value={formData.account}
+                        onChange={handleInputChange}
+                        placeholder="用户名或邮箱"
+                        className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.account ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                      />
+                    </div>
+                    {errors.account && (
+                      <p className="text-sm font-medium text-red-500">{errors.account}</p>
+                    )}
                   </div>
-                  {errors.account && (
-                    <p className="text-sm font-medium text-red-500">{errors.account}</p>
-                  )}
-                </div>
-              </TabsContent>
+                )}
 
-              <TabsContent value="register" className="m-0 space-y-5 outline-none">
-                <div className="space-y-2">
-                  <Label htmlFor="username" className="text-gray-700 font-medium">用户名</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      id="username"
-                      type="text"
-                      name="username"
-                      value={formData.username}
-                      onChange={handleInputChange}
-                      placeholder="请输入用户名"
-                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.username ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
-                    />
-                  </div>
-                  {errors.username && (
-                    <p className="text-sm font-medium text-red-500">{errors.username}</p>
-                  )}
-                </div>
+                {activeTab === "register" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="username" className="text-gray-700 font-medium">用户名</Label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <Input
+                          id="username"
+                          type="text"
+                          name="username"
+                          value={formData.username}
+                          onChange={handleInputChange}
+                          placeholder="请输入用户名"
+                          className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.username ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                        />
+                      </div>
+                      {errors.username && (
+                        <p className="text-sm font-medium text-red-500">{errors.username}</p>
+                      )}
+                    </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-gray-700 font-medium">邮箱</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      id="email"
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      placeholder="请输入邮箱"
-                      className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.email ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
-                    />
-                  </div>
-                  {errors.email && (
-                    <p className="text-sm font-medium text-red-500">{errors.email}</p>
-                  )}
-                </div>
-              </TabsContent>
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-gray-700 font-medium">邮箱</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <Input
+                          id="email"
+                          type="email"
+                          name="email"
+                          value={formData.email}
+                          onChange={handleInputChange}
+                          placeholder="请输入邮箱"
+                          className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.email ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                        />
+                      </div>
+                      {errors.email && (
+                        <p className="text-sm font-medium text-red-500">{errors.email}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
 
+            {mode === "reset-request" && (
+              <div className="space-y-2">
+                <Label htmlFor="reset-account" className="text-gray-700 font-medium">账号</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="reset-account"
+                    type="text"
+                    name="account"
+                    value={formData.account}
+                    onChange={handleInputChange}
+                    placeholder="请输入登录账号"
+                    className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.account ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                  />
+                </div>
+                {errors.account && (
+                  <p className="text-sm font-medium text-red-500">{errors.account}</p>
+                )}
+              </div>
+            )}
+
+            {mode === "reset-confirm" && (
+              <div className="space-y-2">
+                <Label htmlFor="reset-code" className="text-gray-700 font-medium">邮箱验证码</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="reset-code"
+                    type="text"
+                    inputMode="numeric"
+                    name="resetCode"
+                    value={formData.resetCode}
+                    onChange={handleInputChange}
+                    placeholder="请输入验证码"
+                    className={`pl-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.resetCode ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                  />
+                </div>
+                {errors.resetCode && (
+                  <p className="text-sm font-medium text-red-500">{errors.resetCode}</p>
+                )}
+              </div>
+            )}
+
+            {mode !== "reset-request" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-gray-700 font-medium">密码</Label>
-                  {activeTab === "login" && (
-                    <Link
-                      to="/forgot-password"
+                  <Label htmlFor="password" className="text-gray-700 font-medium">
+                    {mode === "reset-confirm" ? "新密码" : "密码"}
+                  </Label>
+                  {mode === "auth" && activeTab === "login" && (
+                    <button
+                      type="button"
                       className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline transition-colors"
-                      onClick={(e) => e.preventDefault()}
+                      onClick={openPasswordReset}
                     >
                       忘记密码？
-                    </Link>
+                    </button>
                   )}
                 </div>
                 <div className="relative">
@@ -293,7 +483,7 @@ export function Auth() {
                     name="password"
                     value={formData.password}
                     onChange={handleInputChange}
-                    placeholder="请输入密码"
+                    placeholder={mode === "reset-confirm" ? "请输入新密码" : "请输入密码"}
                     className={`pl-10 pr-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.password ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
                   />
                   <button
@@ -313,56 +503,78 @@ export function Auth() {
                   <p className="text-sm font-medium text-red-500">{errors.password}</p>
                 )}
               </div>
+            )}
 
-              {activeTab === "register" && (
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">确认密码</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      name="confirmPassword"
-                      value={formData.confirmPassword}
-                      onChange={handleInputChange}
-                      placeholder="请再次输入密码"
-                      className={`pl-10 pr-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.confirmPassword ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                      tabIndex={-1}
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="w-5 h-5" />
-                      ) : (
-                        <Eye className="w-5 h-5" />
-                      )}
-                    </button>
-                  </div>
-                  {errors.confirmPassword && (
-                    <p className="text-sm font-medium text-red-500">{errors.confirmPassword}</p>
-                  )}
+            {(mode === "reset-confirm" || (mode === "auth" && activeTab === "register")) && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">
+                  {mode === "reset-confirm" ? "确认新密码" : "确认密码"}
+                </Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    placeholder={mode === "reset-confirm" ? "请再次输入新密码" : "请再次输入密码"}
+                    className={`pl-10 pr-10 py-5 bg-gray-50/50 border-gray-200 rounded-xl focus-visible:ring-emerald-500 focus-visible:border-transparent transition-colors ${errors.confirmPassword ? "border-red-500 focus-visible:ring-red-500 bg-red-50/50" : "hover:border-gray-300"}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
                 </div>
-              )}
-
-              {submitError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {submitError}
-                </div>
-              )}
-
-              <div className="pt-4">
-                <Button 
-                  type="submit" 
-                  className="w-full py-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl text-base font-bold shadow-md hover:shadow-lg transition-all border-0" 
-                  disabled={isLoading}
-                >
-                  {isLoading ? "处理中..." : activeTab === "login" ? "登录" : "注册"}
-                </Button>
+                {errors.confirmPassword && (
+                  <p className="text-sm font-medium text-red-500">{errors.confirmPassword}</p>
+                )}
               </div>
+            )}
 
+            {submitError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {submitError}
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {successMessage}
+              </div>
+            )}
+
+            <div className="pt-4">
+              <Button
+                type="submit"
+                className="w-full py-6 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl text-base font-bold shadow-md hover:shadow-lg transition-all border-0"
+                disabled={isLoading}
+              >
+                {isLoading ? "处理中..." : submitLabel}
+              </Button>
+            </div>
+
+            {mode === "reset-confirm" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                disabled={isLoading}
+                onClick={() => setMode("reset-request")}
+              >
+                重新发送验证码
+              </Button>
+            )}
+
+            {mode === "auth" && (
               <div className="mt-8">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
@@ -381,8 +593,8 @@ export function Auth() {
                   <Link to="/">以游客身份继续</Link>
                 </Button>
               </div>
-            </form>
-          </Tabs>
+            )}
+          </form>
         </div>
       </div>
     </div>

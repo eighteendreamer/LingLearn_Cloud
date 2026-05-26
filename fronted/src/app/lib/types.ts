@@ -5,6 +5,17 @@ export interface AuthTokenResponse {
   expires_in: number;
 }
 
+export interface PasswordResetRequestResponse {
+  message: string;
+  expires_in_seconds: number;
+  masked_email: string | null;
+  sent: boolean;
+}
+
+export interface PasswordResetConfirmResponse {
+  message: string;
+}
+
 export interface UserStatsResponse {
   total_learning_minutes: number;
   streak_days: number;

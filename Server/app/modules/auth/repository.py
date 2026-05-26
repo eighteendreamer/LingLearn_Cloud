@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import User, UserRefreshToken
+from app.modules.auth.models import PasswordResetCode, User, UserRefreshToken
 from app.modules.user.models import UserProfile, UserSettings
 
 
@@ -14,6 +14,14 @@ class AuthRepository:
     async def get_user_by_account(self, session: AsyncSession, account: str) -> User | None:
         stmt = select(User).where(
             User.deleted_at.is_(None),
+            or_(User.username == account, User.email == account),
+        )
+        return await session.scalar(stmt)
+
+    async def get_active_user_by_account(self, session: AsyncSession, account: str) -> User | None:
+        stmt = select(User).where(
+            User.deleted_at.is_(None),
+            User.status == "active",
             or_(User.username == account, User.email == account),
         )
         return await session.scalar(stmt)
@@ -167,5 +175,121 @@ class AuthRepository:
                 UserRefreshToken.revoked_at.is_(None),
             )
             .values(revoked_at=at)
+        )
+        await session.execute(stmt)
+
+    async def revoke_refresh_tokens_for_user(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        at: datetime,
+    ) -> None:
+        stmt = (
+            update(UserRefreshToken)
+            .where(
+                UserRefreshToken.user_id == user_id,
+                UserRefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=at)
+        )
+        await session.execute(stmt)
+
+    async def update_user_password(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        password_hash: str,
+    ) -> None:
+        stmt = update(User).where(User.id == user_id).values(password_hash=password_hash)
+        await session.execute(stmt)
+
+    async def create_password_reset_code(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        email: str,
+        code_hash: str,
+        request_ip: str | None,
+        expired_at: datetime,
+    ) -> PasswordResetCode:
+        record = PasswordResetCode(
+            user_id=user_id,
+            email=email,
+            code_hash=code_hash,
+            request_ip=request_ip,
+            expired_at=expired_at,
+        )
+        session.add(record)
+        await session.flush()
+        return record
+
+    async def get_latest_active_password_reset_code(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        now: datetime,
+    ) -> PasswordResetCode | None:
+        stmt = (
+            select(PasswordResetCode)
+            .where(
+                PasswordResetCode.user_id == user_id,
+                PasswordResetCode.used_at.is_(None),
+                PasswordResetCode.expired_at >= now,
+            )
+            .order_by(PasswordResetCode.created_at.desc(), PasswordResetCode.id.desc())
+            .limit(1)
+        )
+        return await session.scalar(stmt)
+
+    async def count_password_reset_codes_for_user_since(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int,
+        since: datetime,
+    ) -> int:
+        stmt = select(func.count()).select_from(PasswordResetCode).where(
+            PasswordResetCode.user_id == user_id,
+            PasswordResetCode.created_at >= since,
+        )
+        return int(await session.scalar(stmt) or 0)
+
+    async def count_password_reset_codes_for_ip_since(
+        self,
+        session: AsyncSession,
+        *,
+        request_ip: str,
+        since: datetime,
+    ) -> int:
+        stmt = select(func.count()).select_from(PasswordResetCode).where(
+            PasswordResetCode.request_ip == request_ip,
+            PasswordResetCode.created_at >= since,
+        )
+        return int(await session.scalar(stmt) or 0)
+
+    async def mark_password_reset_code_used(
+        self,
+        session: AsyncSession,
+        *,
+        code_id: int,
+        at: datetime,
+    ) -> None:
+        stmt = update(PasswordResetCode).where(PasswordResetCode.id == code_id).values(used_at=at)
+        await session.execute(stmt)
+
+    async def increment_password_reset_failed_attempts(
+        self,
+        session: AsyncSession,
+        *,
+        code_id: int,
+    ) -> None:
+        stmt = (
+            update(PasswordResetCode)
+            .where(PasswordResetCode.id == code_id)
+            .values(failed_attempts=PasswordResetCode.failed_attempts + 1)
         )
         await session.execute(stmt)
